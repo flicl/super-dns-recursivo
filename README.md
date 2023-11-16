@@ -210,6 +210,7 @@ apt install zabbix-sender
 Adicione os scripts de monitoramento.
 
 > serverMonitoring.sh
+
 ```nano /etc/unbound/serverMonitoring.sh```
 ```bash
 #!/bin/bash
@@ -242,6 +243,7 @@ memFree=$(free -b | awk '/Mem/{print $4}')
 
 ```
 > unboundMonitoring.sh
+
 ```nano /etc/unbound/unboundMonitoring.sh```
 ```bash
 #!/bin/bash
@@ -331,5 +333,22 @@ NUM_ANSWER_secure=$(cat ${FILE} | grep -w 'num.answer.secure' | cut -d '=' -f2)
 
 ```
 
+Dê as permissões de execução
+
+```bash
+chmod +x /etc/unbound/*.sh
+```
+
+Acesse o agendador cron e adicione a execução dos dois scripts
 
 
+```bash
+#Acesse o editor do cron
+crontab -e
+
+# Adicione os scripts
+*/1 * * * * /etc/unbound/serverMonitoring.sh IP-DO-ZABBIX NOME-DO-HOST-DNS >/dev/null 2>&1
+*/3 * * * * /etc/unbound/unboundMonitoring.sh IP-DO-ZABBIX NOME-DO-HOST-DNS >/dev/null 2>&1
+
+#Saia e salve com crtl+o
+```
