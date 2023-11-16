@@ -350,5 +350,8 @@ crontab -e
 */1 * * * * /etc/unbound/serverMonitoring.sh IP-DO-ZABBIX NOME-DO-HOST-DNS >/dev/null 2>&1
 */3 * * * * /etc/unbound/unboundMonitoring.sh IP-DO-ZABBIX NOME-DO-HOST-DNS >/dev/null 2>&1
 
-#Saia e salve com crtl+o
 ```
+
+### Instalação - Templates (Zabbix / Grafana)
+
+Importe os templates de monitoramnto para o zabbix e grafana.
