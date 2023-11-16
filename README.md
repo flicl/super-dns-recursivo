@@ -355,3 +355,6 @@ crontab -e
 ### Instalação - Templates (Zabbix / Grafana)
 
 Importe os templates de monitoramnto para o zabbix e grafana.
+
+- Zabbix 5.4 +
+- Grafana 10.2.1 +
