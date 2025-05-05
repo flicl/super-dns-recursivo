@@ -1,0 +1,26 @@
+# Arquivos temporários
+*.tmp
+*.log
+*.pid
+*.swp
+*~
+
+# Arquivos específicos do sistema
+.DS_Store
+Thumbs.db
+
+# Diretórios temporários
+/temp/
+/tmp/
+logs/
+
+# Configurações locais
+.env
+.env.local
+.vscode/
+.idea/
+
+# Backups
+*.bak
+*.backup
+*.old

@@ -1,0 +1,195 @@
+zabbix_export:
+  version: '6.0'
+  date: '2025-05-05T12:00:00Z'
+  groups:
+    - uuid: f2481361dc8540a7ac77a2de1d2e7c4e
+      name: 'DNS Servers'
+  templates:
+    - uuid: 6cd2c31feebd40c788c0de8ddc2056ca
+      template: 'DNS Unbound Server'
+      name: 'DNS Unbound Server'
+      description: |
+        Template para monitoramento completo de servidores DNS Unbound.
+        
+        Inclui métricas de:
+        * Desempenho do servidor (CPU, memória)
+        * Estatísticas do Unbound (queries, cache hits, etc)
+        * Detecção e monitoramento de abusos
+      groups:
+        - name: 'DNS Servers'
+      items:
+        - uuid: 7e32a42d0b374f1aac71d23be3d5dda7
+          name: 'CPU Usage'
+          key: 'cpu.usage'
+          delay: '60'
+          value_type: FLOAT
+          units: '%'
+          description: 'Uso de CPU do servidor'
+          
+        - uuid: 22d8ee89cf0e47b8a54a6ec75b5a1234
+          name: 'Memory Total'
+          key: 'mem.total'
+          delay: '300'
+          value_type: FLOAT
+          units: 'B'
+          description: 'Memória total do servidor'
+          
+        - uuid: a6c98e70bc954f5b9dae20a8c5e9abcd
+          name: 'Memory Usage'
+          key: 'mem.usage'
+          delay: '60'
+          value_type: FLOAT
+          units: 'B'
+          description: 'Uso de memória do servidor'
+          
+        - uuid: fd871b452c42486da0db9b2e876cef01
+          name: 'Memory Free'
+          key: 'mem.free'
+          delay: '60'
+          value_type: FLOAT
+          units: 'B'
+          description: 'Memória livre do servidor'
+          
+        - uuid: 1fcda0b9cbf54be5a3b4c45a9bdc2a56
+          name: 'DNS Queries Total'
+          key: 'unbound.queries.total'
+          delay: '180'
+          value_type: FLOAT
+          description: 'Total de queries DNS'
+          
+        - uuid: 49d4e8f6a6e641f68cb3dbf078be4321
+          name: 'DNS Cache Hits'
+          key: 'unbound.cache.hits'
+          delay: '180'
+          value_type: FLOAT
+          description: 'Cache hits do Unbound'
+          
+        - uuid: c7a5f61280324abfa23c1b49e3b12345
+          name: 'DNS Cache Misses'
+          key: 'unbound.cache.misses'
+          delay: '180'
+          value_type: FLOAT
+          description: 'Cache misses do Unbound'
+          
+        - uuid: 8901cdef23454e1aae789bf01d2a3a45
+          name: 'DNS Cache Hit Ratio'
+          key: 'unbound.cache.hit.ratio'
+          delay: '180'
+          value_type: FLOAT
+          units: '%'
+          description: 'Taxa de acertos de cache'
+          
+        - uuid: 4567ef0123a5467890bcde123a4b5c67
+          name: 'DNS Queries per Second'
+          key: 'unbound.qps.current'
+          delay: '60'
+          value_type: FLOAT
+          units: 'qps'
+          description: 'Queries por segundo atuais'
+          
+        - uuid: bc1234a567de89f0123a4b5c67890def
+          name: 'DNS Recursion Time Average'
+          key: 'unbound.recursion.time.avg'
+          delay: '180'
+          value_type: FLOAT
+          units: 'ms'
+          description: 'Tempo médio de recursão'
+
+      discovery_rules:
+        - uuid: 789abcdef01234567890bcdef1234567
+          name: 'Network interfaces discovery'
+          key: 'net.if.discovery'
+          delay: '1h'
+          item_prototypes:
+            - uuid: abcdef123456789abcdef1234567890
+              name: 'Incoming traffic on {#IFNAME}'
+              key: 'net.if.in[{#IFNAME}]'
+              delay: '60'
+              value_type: FLOAT
+              units: 'bps'
+              description: 'Tráfego de entrada na interface'
+              
+            - uuid: 123456789abcdef123456789abcdef
+              name: 'Outgoing traffic on {#IFNAME}'
+              key: 'net.if.out[{#IFNAME}]'
+              delay: '60'
+              value_type: FLOAT
+              units: 'bps'
+              description: 'Tráfego de saída na interface'
+              
+      triggers:
+        - uuid: 76d5fc27c4d140a7b9c12356d93ea765
+          expression: 'last(/DNS Unbound Server/cpu.usage)>90'
+          name: 'High CPU usage on {HOST.NAME}'
+          priority: WARNING
+          description: 'CPU usage is above 90%'
+          
+        - uuid: a398e7651d8940bc8721de43e9f5a123
+          expression: 'last(/DNS Unbound Server/mem.free)<524288000'
+          name: 'Low memory on {HOST.NAME}'
+          priority: WARNING
+          description: 'Less than 500MB of free memory'
+          
+        - uuid: 4f912ade78b24c97ba1edc345f67890a
+          expression: 'last(/DNS Unbound Server/unbound.qps.current)>1000'
+          name: 'High DNS query rate on {HOST.NAME}'
+          priority: INFO
+          description: 'More than 1000 queries per second'
+          
+        - uuid: b7e13f2c6a4d406889012345c678901d
+          expression: 'last(/DNS Unbound Server/unbound.recursion.time.avg)>100'
+          name: 'Slow DNS resolution on {HOST.NAME}'
+          priority: WARNING
+          description: 'Average recursion time is above 100ms'
+          
+      dashboards:
+        - uuid: 9371a468fc374a55bcfa23d780c6a539
+          name: 'DNS Server Overview'
+          pages:
+            - name: 'Main'
+              widgets:
+                - type: GRAPH_CLASSIC
+                  name: 'CPU and Memory Usage'
+                  width: '12'
+                  height: '5'
+                  fields:
+                    - type: INTEGER
+                      name: source_type
+                      value: '0'
+                    - type: GRAPH
+                      name: graphid
+                      value:
+                        host: 'DNS Unbound Server'
+                        name: 'CPU and Memory Usage'
+                        
+                - type: GRAPH_CLASSIC
+                  name: 'DNS Queries'
+                  x: '0'
+                  y: '5'
+                  width: '12'
+                  height: '5'
+                  fields:
+                    - type: INTEGER
+                      name: source_type
+                      value: '0'
+                    - type: GRAPH
+                      name: graphid
+                      value:
+                        host: 'DNS Unbound Server'
+                        name: 'DNS Queries'
+                        
+                - type: GRAPH_CLASSIC
+                  name: 'Cache Performance'
+                  x: '0'
+                  y: '10'
+                  width: '12'
+                  height: '5'
+                  fields:
+                    - type: INTEGER
+                      name: source_type
+                      value: '0'
+                    - type: GRAPH
+                      name: graphid
+                      value:
+                        host: 'DNS Unbound Server'
+                        name: 'Cache Performance'
