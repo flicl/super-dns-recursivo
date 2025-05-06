@@ -214,8 +214,8 @@ Adicione os scripts de monitoramento.
 ```nano /etc/unbound/serverMonitoring.sh```
 ```bash
 #!/bin/bash
-#	Douglas Rodrigues
-#	douglas.rodrigues@tripleplay.network
+# Copyright (c) 2025 TriplePlay Network
+# Contact: contato@tripleplay.network
 
 if [ -z ${1} ] || [ -z ${2} ] ; then
 	echo "You need to specify the IP address of zabbix server and hostname of your DNS Unbound on zabbix"
@@ -247,8 +247,8 @@ memFree=$(free -b | awk '/Mem/{print $4}')
 ```nano /etc/unbound/unboundMonitoring.sh```
 ```bash
 #!/bin/bash
-#	Douglas Rodrigues
-#	douglas.rodrigues@tripleplay.network
+# Copyright (c) 2025 TriplePlay Network
+# Contact: contato@tripleplay.network
 
 
 if [ -z ${1} ] || [ -z ${2} ] ; then
