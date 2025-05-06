@@ -2,6 +2,21 @@
 
 Este guia apresenta o procedimento simplificado para implementar a proteção do servidor DNS Unbound contra abusos, utilizando dnstop para monitoramento e Fail2ban para bloqueio automático.
 
+## Fluxo de Instalação
+
+```mermaid
+flowchart TD
+    A[Verificar Pré-requisitos] -->|Unbound instalado| B[Instalar Script de Proteção]
+    B --> C[Verificar Instalação]
+    C --> D{Personalização Necessária?}
+    D -->|Sim| E[Personalizar Configurações]
+    D -->|Não| F[Sistema Ativo]
+    E --> F
+    
+    style A fill:#f9f,stroke:#333,stroke-width:2px
+    style F fill:#9f9,stroke:#333,stroke-width:2px
+```
+
 ## Instalação em 4 Passos
 
 ### 1. Verificar Pré-requisitos
@@ -66,6 +81,20 @@ sudo /opt/dns-protection/dns-monitor.sh --test
 
 ## Estrutura da Solução
 
+```mermaid
+graph TD
+    A[Script de Monitoramento<br>/opt/dns-protection/dns-monitor.sh] --> B[Logs de Abuso<br>/var/log/dns-abuse.log]
+    B --> C[Configuração Fail2ban<br>/etc/fail2ban/jail.d/dns-abuse.conf]
+    C --> D[Filtro Fail2ban<br>/etc/fail2ban/filter.d/dns-abuse.conf]
+    A --> E[Whitelist<br>/opt/dns-protection/config/whitelist.txt]
+    
+    style A fill:#f96,stroke:#333,stroke-width:2px
+    style B fill:#bbf,stroke:#333,stroke-width:2px
+    style C fill:#bbf,stroke:#333,stroke-width:2px
+    style D fill:#bbf,stroke:#333,stroke-width:2px
+    style E fill:#9f9,stroke:#333,stroke-width:2px
+```
+
 - **Script de monitoramento**: `/opt/dns-protection/dns-monitor.sh`
 - **Logs de abuso**: `/var/log/dns-abuse.log`
 - **Configuração Fail2ban**: `/etc/fail2ban/jail.d/dns-abuse.conf`
@@ -83,3 +112,32 @@ sudo /opt/dns-protection/dns-monitor.sh --test
 Consulte o guia técnico completo para informações detalhadas sobre instalação manual, personalização avançada e solução de problemas:
 
 `/opt/dns-protection/docs/dns-protection-technical-guide.md`
+
+## Fluxo de Processamento de Requisições DNS
+
+```mermaid
+sequenceDiagram
+    participant Cliente as Cliente
+    participant Firewall as Firewall (iptables)
+    participant Unbound as Servidor DNS
+    participant Monitoramento as Sistema de Proteção
+    
+    Note over Monitoramento: Monitoramento contínuo<br>através de dnstop+tcpdump
+    
+    alt IP não bloqueado
+        Cliente->>Firewall: Requisição DNS
+        Firewall->>Unbound: Permite requisição
+        Unbound->>Cliente: Resposta DNS
+        Monitoramento->>Monitoramento: Analisa tráfego
+        
+        alt Detecção de abuso
+            Monitoramento->>Monitoramento: Verificar se IP está em whitelist
+            Monitoramento->>Monitoramento: Registrar abuso em log
+            Monitoramento->>Firewall: Configurar bloqueio via Fail2ban
+            Note over Firewall: IP bloqueado por bantime<br>(padrão: 1 hora)
+        end
+    else IP bloqueado
+        Cliente->>Firewall: Requisição DNS
+        Firewall->>Cliente: Bloqueia requisição
+    end
+```

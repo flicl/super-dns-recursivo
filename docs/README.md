@@ -2,6 +2,23 @@
 
 Este diretório contém a documentação completa para instalação, configuração e manutenção do servidor Super DNS Recursivo, incluindo o sistema de proteção contra abusos.
 
+## Arquitetura do Sistema
+
+```mermaid
+graph TD
+    A[Cliente DNS] -->|Consultas DNS| B[Unbound DNS Server]
+    B -->|Consultas Recursivas| C[Internet/Root Servers]
+    C -->|Respostas DNS| B
+    B -->|Respostas DNS| A
+    B -->|Logs| D[Sistema de Proteção]
+    D -->|Monitoramento| E[dnstop + tcpdump]
+    E -->|Análise| F[dns-monitor.sh]
+    F -->|Detecção de Abuso| G[Fail2ban]
+    G -->|Bloqueio| H[iptables]
+    I[Scripts de Monitoramento] -->|Métricas| J[Zabbix/Grafana]
+    K[Arquivos de Configuração] -->|Controle| B
+```
+
 ## Índice
 
 1. [Instalação do Servidor Unbound](#instalação-do-servidor-unbound)
@@ -31,7 +48,7 @@ O sistema de proteção contra abusos monitora o tráfego DNS e identifica autom
 
 ```bash
 chmod +x ../install/dns-protection-setup.sh
-sudo ../install/dns-protection-setup.sh
+sudo ./install/dns-protection-setup.sh
 ```
 
 ### Documentação Detalhada
@@ -41,7 +58,25 @@ sudo ../install/dns-protection-setup.sh
 
 ## Configuração de Monitoramento
 
-O Super DNS Recursivo inclui integração com Zabbix para monitoramento completo do servidor e do serviço DNS.
+```mermaid
+flowchart LR
+    A[Servidor DNS Unbound] -->|Estatísticas| B[Scripts de Monitoramento]
+    B -->|zabbix_sender| C[Servidor Zabbix]
+    C -->|API| D[Grafana]
+    B -->|1/min| B1[serverMonitoring.sh]
+    B -->|3/min| B2[unboundMonitoring.sh]
+    
+    subgraph "Zabbix/Grafana"
+        C
+        D
+        E[Alarmes/Notificações]
+    end
+    
+    C --> E
+    
+    style A fill:#bbf,stroke:#333,stroke-width:2px
+    style D fill:#9f9,stroke:#333,stroke-width:2px
+```
 
 ### Configuração do Monitoramento
 

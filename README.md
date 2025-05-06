@@ -5,6 +5,68 @@
 
 Um servidor DNS recursivo completo baseado no Unbound com monitoramento integrado e proteção contra abusos.
 
+## Estrutura do Projeto
+
+```mermaid
+graph TD
+    subgraph "super-dns-recursivo"
+        README[README.md]
+        
+        subgraph "docs/"
+            D_README[README.md]
+            D_QUICK[dns-protection-quickstart.md]
+            D_TECH[dns-protection-technical-guide.md]
+        end
+        
+        subgraph "conf/"
+            UNBOUND[unbound.conf]
+            subgraph "fail2ban/"
+                F2B_JAIL[dns-abuse-jail.conf]
+                F2B_CONF[dns-abuse.conf]
+            end
+        end
+        
+        subgraph "install/"
+            DNS_SETUP[dns-protection-setup.sh]
+            UNB_SETUP[unbound-setup.sh]
+        end
+        
+        subgraph "scripts/monitoring/"
+            DNS_MON[dns-monitor.sh]
+            SRV_MON[serverMonitoring.sh]
+            UNB_MON[unboundMonitoring.sh]
+        end
+        
+        subgraph "templates/"
+            subgraph "grafana/"
+                GRA_DASH[dns-monitoring-dashboard.json]
+            end
+            subgraph "zabbix/"
+                ZBX_TEMPL[dns-server-template.yaml]
+            end
+        end
+    end
+    
+    README -->|Documentação| D_README
+    README -->|Instalação| install/
+    D_README -->|Guia Rápido| D_QUICK
+    D_README -->|Guia Técnico| D_TECH
+    DNS_SETUP -->|Configura| F2B_JAIL
+    DNS_SETUP -->|Configura| F2B_CONF
+    DNS_SETUP -->|Instala| DNS_MON
+    UNB_SETUP -->|Configura| UNBOUND
+    DNS_MON -->|Monitoramento| SRV_MON
+    DNS_MON -->|Monitoramento| UNB_MON
+    SRV_MON -->|Dados para| ZBX_TEMPL
+    UNB_MON -->|Dados para| ZBX_TEMPL
+    ZBX_TEMPL -->|Visualização| GRA_DASH
+    
+    style README fill:#f96,stroke:#333,stroke-width:2px
+    style DNS_MON fill:#bbf,stroke:#333,stroke-width:2px
+    style UNBOUND fill:#bbf,stroke:#333,stroke-width:2px
+    style F2B_JAIL fill:#bbf,stroke:#333,stroke-width:2px
+```
+
 ## Visão Geral
 
 O Super DNS Recursivo oferece uma solução completa para serviços DNS em provedores de Internet e empresas, com foco em:
@@ -192,6 +254,38 @@ sudo fail2ban-client status dns-abuse
 ```
 
 ### 3. Sistema de Monitoramento
+
+```mermaid
+flowchart TB
+    A[Servidor DNS Unbound] -->|Estatísticas| B1[serverMonitoring.sh]
+    A -->|Estatísticas| B2[unboundMonitoring.sh]
+    
+    B1 -->|zabbix_sender| C[Servidor Zabbix]
+    B2 -->|zabbix_sender| C
+    
+    C -->|Template| D[Configuração Zabbix]
+    C -->|Dados| E[Grafana]
+    C -->|Alertas| F[Notificações]
+    
+    subgraph "Coleta de Dados"
+        B1
+        B2
+    end
+    
+    subgraph "Zabbix"
+        C
+        D
+        F
+    end
+    
+    subgraph "Visualização"
+        E
+    end
+    
+    style A fill:#bbf,stroke:#333,stroke-width:2px
+    style C fill:#f96,stroke:#333,stroke-width:2px
+    style E fill:#9f6,stroke:#333,stroke-width:2px
+```
 
 ```bash
 # Instalar o zabbix-sender para o seu sistema operacional

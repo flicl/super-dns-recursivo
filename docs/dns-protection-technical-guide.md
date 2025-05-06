@@ -6,19 +6,93 @@ Este documento apresenta uma solução completa para proteção de servidores DN
 
 ### 1.1. Componentes da Arquitetura
 
-1. **dnstop + tcpdump**: Ferramentas para captura e análise de pacotes DNS em tempo real
-2. **Script de processamento personalizado**: Interpreta os dados do dnstop e detecta padrões de abuso
-3. **Sistema de logs**: Registra detalhes de abusos para análise posterior
-4. **Fail2ban**: Serviço de mitigação que efetua o bloqueio dos IPs abusivos
-5. **Serviço systemd**: Gerencia o ciclo de vida do processo de monitoramento
-6. **Sistema de whitelist**: Gerencia a lista de endereços IP confiáveis
-7. **Análise de entropia DNS**: Detecta possíveis ataques de tunneling DNS
-8. **Análise de consultas NXDomain**: Identifica ataques baseados em domínios inexistentes
+```mermaid
+classDiagram
+    class Unbound {
+        +Servidor DNS Recursivo
+        +Resolução e cache de DNS
+        +DNSSEC
+    }
+    
+    class DnstopTcpdump {
+        +Captura de pacotes
+        +Análise de tráfego DNS
+        +Estatísticas em tempo real
+    }
+    
+    class ScriptMonitoramento {
+        +Processamento de dados
+        +Detecção de abusos
+        +Geração de logs
+    }
+    
+    class Fail2ban {
+        +Monitoramento de logs
+        +Detecção de padrões
+        +Execução de ações
+    }
+    
+    class IPTables {
+        +Firewall
+        +Bloqueio de IPs
+        +Controle de acesso
+    }
+    
+    class Whitelist {
+        +IPs confiáveis
+        +Redes CIDR
+        +Exceções
+    }
+    
+    class Logs {
+        +Registro de eventos
+        +Histórico
+        +Auditoria
+    }
+    
+    Unbound --> DnstopTcpdump: Tráfego DNS
+    DnstopTcpdump --> ScriptMonitoramento: Análise
+    ScriptMonitoramento --> Whitelist: Consulta
+    ScriptMonitoramento --> Logs: Registra abusos
+    Logs --> Fail2ban: Monitora
+    Fail2ban --> IPTables: Cria regras
+    IPTables --> Unbound: Protege
+```
 
 ### 1.2. Fluxo de Operação
 
-```
-[Tráfego DNS] → [tcpdump] → [dnstop] → [Verificação Whitelist] → [Análise Avançada] → [Script de Análise] → [Logs de Abuso] → [Fail2ban] → [Regras iptables]
+```mermaid
+sequenceDiagram
+    participant Client as Cliente DNS
+    participant Unbound as Servidor Unbound
+    participant TCPDUMP as tcpdump
+    participant DNSTOP as dnstop
+    participant Monitor as dns-monitor.sh
+    participant Whitelist as Whitelist
+    participant Logs as Logs
+    participant Fail2ban as Fail2ban
+    participant IPTables as IPTables
+    
+    Client->>Unbound: Consultas DNS
+    Unbound->>Client: Respostas DNS
+    
+    note over TCPDUMP,DNSTOP: Monitoramento contínuo
+    
+    TCPDUMP->>DNSTOP: Captura pacotes porta 53
+    DNSTOP->>Monitor: Estatísticas de tráfego
+    
+    alt Detecção de abuso
+        Monitor->>Whitelist: Verificar se IP está na whitelist
+        
+        alt IP na whitelist
+            Whitelist->>Monitor: IP confiável, ignorar
+        else IP não está na whitelist
+            Monitor->>Logs: Registrar abuso detectado
+            Logs->>Fail2ban: Monitorar logs
+            Fail2ban->>IPTables: Adicionar regra de bloqueio
+            IPTables->>Client: Bloquear requisições futuras
+        end
+    end
 ```
 
 O fluxo completo de operação ocorre da seguinte forma:
@@ -33,6 +107,35 @@ O fluxo completo de operação ocorre da seguinte forma:
 8. O Fail2ban cria regras no iptables para bloquear o acesso dos IPs abusivos
 
 ## 2. Instalação e Configuração Detalhada
+
+```mermaid
+flowchart TD
+    start([Início da Instalação]) --> prereq[Verificar Pré-requisitos]
+    prereq --> choose{Escolher Método de Instalação}
+    
+    choose -->|Automática| auto[Instalação Automatizada]
+    choose -->|Manual| dep[Instalar Dependências]
+    
+    auto --> verify[Verificar Instalação]
+    
+    dep --> dir[Criar Estrutura de Diretórios]
+    dir --> script[Instalar Script de Monitoramento]
+    script --> fail2ban[Configurar Fail2ban]
+    fail2ban --> systemd[Configurar Serviço Systemd]
+    systemd --> services[Iniciar e Habilitar Serviços]
+    services --> verify
+    
+    verify --> custom{Customização Necessária?}
+    custom -->|Sim| cust[Customizar e Otimizar]
+    custom -->|Não| complete([Instalação Completa])
+    cust --> complete
+    
+    style start fill:#f96,stroke:#333
+    style complete fill:#9f6,stroke:#333
+    style auto fill:#bbf,stroke:#333
+    style choose fill:#ff9,stroke:#333
+    style custom fill:#ff9,stroke:#333
+```
 
 ### 2.1. Pré-requisitos
 
@@ -173,6 +276,32 @@ sudo systemctl start dns-protection
 
 ## 3. Customização e Otimização
 
+```mermaid
+mindmap
+  root((Sistema de<br>Proteção DNS))
+    (Parâmetros de Detecção)
+      [MAX_RPS]
+      [MONITOR_INTERVAL]
+      [ALERT_THRESHOLD]
+      [QUERY_ENTROPY_THRESHOLD]
+      [MAX_NX_DOMAIN_PERCENT]
+    (Whitelist)
+      [IPs Individuais]
+      [Redes CIDR]
+      [Comentários]
+    (Modos de Operação)
+      [Modo Normal]
+      [Modo Debug]
+      [Modo Teste]
+      [Modo Análise]
+      [Modo Configuração]
+    (Integração Fail2ban)
+      [findtime]
+      [bantime]
+      [maxretry]
+      [Ações]
+```
+
 ### 3.1. Análise Automática de Tráfego
 
 A solução inclui um modo de análise que monitora o tráfego real por 5 minutos e sugere configurações otimizadas:
@@ -236,6 +365,57 @@ MAX_RPS=500
 
 ### 3.5. Detecção Avançada de Ataques
 
+```mermaid
+stateDiagram-v2
+    [*] --> Monitoramento
+    
+    state "Monitoramento de Tráfego" as Monitoramento
+    state "Análise de Requisições" as Analise {
+        state "Verificação de RPS" as VerifRPS
+        state "Análise de Entropia" as AnaliseEntropia
+        state "Contagem NXDomain" as ContNXDomain
+        
+        [*] --> VerifRPS
+        VerifRPS --> AnaliseEntropia
+        AnaliseEntropia --> ContNXDomain
+        ContNXDomain --> [*]
+    }
+    
+    state "Tomada de Decisão" as Decisao {
+        state if_rps <<choice>>
+        state if_whitelist <<choice>>
+        state if_entropy <<choice>>
+        state if_nxdomain <<choice>>
+        
+        [*] --> if_rps
+        
+        if_rps --> if_whitelist: RPS > MAX_RPS
+        if_rps --> if_entropy: RPS <= MAX_RPS
+        
+        if_whitelist --> Ignorar: IP na whitelist
+        if_whitelist --> RegLog: IP não na whitelist
+        
+        if_entropy --> if_nxdomain: Entropia normal
+        if_entropy --> RegLog: Alta entropia
+        
+        if_nxdomain --> Ignorar: NXDomain normal
+        if_nxdomain --> RegLog: Alto % NXDomain
+    }
+    
+    state "Ação" as Acao {
+        state "Ignorar" as Ignorar
+        state "Registrar no Log" as RegLog
+        state "Banir IP com Fail2ban" as Banir
+        
+        RegLog --> Banir: maxretry atingido
+    }
+    
+    Monitoramento --> Analise: A cada MONITOR_INTERVAL
+    Analise --> Decisao: Resultado da análise
+    Decisao --> Acao: Decisão tomada
+    Acao --> Monitoramento: Continuar monitoramento
+```
+
 A solução inclui detecção de:
 
 1. **Tunneling DNS**: Baseado na entropia das consultas DNS
@@ -298,6 +478,47 @@ sudo iptables -L -n | grep -i dns-abuse
 ```
 
 ## 5. Solução de Problemas
+
+```mermaid
+flowchart TD
+    start([Problema Detectado]) --> type{Tipo de Problema}
+    
+    type -->|Serviço não inicia| checks1[Verificações Iniciais]
+    checks1 --> c1[Verificar permissões]
+    c1 --> c2[Verificar dependências]
+    c2 --> c3[Verificar interface de rede]
+    c3 --> fixed1{Resolvido?}
+    fixed1 -->|Sim| end([Problema Resolvido])
+    fixed1 -->|Não| logs1[Verificar logs do sistema]
+    logs1 --> support[Contatar Suporte]
+    
+    type -->|Fail2ban não bane IPs| f1[Verificar filtro]
+    f1 --> f2[Verificar logs do Fail2ban]
+    f2 --> f3[Reiniciar serviços]
+    f3 --> fixed2{Resolvido?}
+    fixed2 -->|Sim| end
+    fixed2 -->|Não| conf[Verificar configuração]
+    conf --> support
+    
+    type -->|Alto uso de CPU| cpu1[Aumentar intervalo]
+    cpu1 --> cpu2[Limitar captura de pacotes]
+    cpu2 --> fixed3{Resolvido?}
+    fixed3 -->|Sim| end
+    fixed3 -->|Não| analyze[Executar análise de tráfego]
+    analyze --> support
+    
+    type -->|Falsos positivos| fp1[Aumentar limite RPS]
+    fp1 --> fp2[Adicionar IPs à whitelist]
+    fp2 --> fp3[Aumentar maxretry]
+    fp3 --> fixed4{Resolvido?}
+    fixed4 -->|Sim| end
+    fixed4 -->|Não| advanced[Configurações avançadas]
+    advanced --> support
+    
+    style start fill:#f96,stroke:#333,stroke-width:2px
+    style end fill:#9f6,stroke:#333,stroke-width:2px
+    style type fill:#ff9,stroke:#333,stroke-width:2px
+```
 
 ### 5.1. O Serviço de Monitoramento Falha ao Iniciar
 
