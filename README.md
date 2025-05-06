@@ -269,9 +269,51 @@ sudo /opt/dns-protection/dns-monitor.sh --config
 ```
 
 ##### Whitelist de IPs Confiáveis
+
+O sistema de proteção inclui um mecanismo de whitelist para garantir que IPs confiáveis nunca sejam bloqueados, mesmo em caso de tráfego anômalo.
+
 ```bash
-# Editar a lista de IPs e redes confiáveis que nunca serão bloqueados
+# Editar a lista de IPs e redes confiáveis
 sudo nano /opt/dns-protection/config/whitelist.txt
+```
+
+Formato do arquivo de whitelist:
+```
+# Formato: Um IP ou rede por linha (suporta notação CIDR)
+# Exemplo:
+192.168.1.10       # IP único (servidor interno)
+10.0.0.0/24        # Rede interna completa
+2001:db8::/64      # Rede IPv6
+100.64.0.1         # Outro IP confiável
+
+# Comentários são permitidos após o caractere #
+```
+
+Comandos para gerenciar a whitelist:
+```bash
+# Adicionar um IP à whitelist
+sudo /opt/dns-protection/dns-monitor.sh --add-whitelist 192.168.1.100
+
+# Adicionar uma rede à whitelist
+sudo /opt/dns-protection/dns-monitor.sh --add-whitelist 172.16.0.0/16
+
+# Remover um IP ou rede da whitelist
+sudo /opt/dns-protection/dns-monitor.sh --remove-whitelist 192.168.1.100
+
+# Listar todos os IPs e redes na whitelist
+sudo /opt/dns-protection/dns-monitor.sh --list-whitelist
+```
+
+**Recomendações para whitelist:**
+- Adicione IPs de servidores internos e infraestrutura crítica
+- Para NATs corporativos com muitos usuários, adicione o IP público do NAT
+- Para provedores, considere adicionar gateways de clientes empresariais
+- Adicione servidores de monitoramento e sistemas de gerenciamento
+- Considere adicionar IPs de serviços DNS recursivos externos confiáveis
+
+Após modificar a whitelist, reinicie o serviço para aplicar as alterações:
+```bash
+sudo systemctl restart dns-protection
 ```
 
 ##### Modo de Teste

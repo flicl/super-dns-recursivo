@@ -1,0 +1,19 @@
+# Formato: Um IP ou rede por linha (suporta notação CIDR)
+# Adicione abaixo os IPs ou redes que NUNCA devem ser bloqueados
+
+# === IPs públicos dos gateways CGNAT ===
+200.200.10.1      # Gateway CGNAT região Norte
+200.200.20.1      # Gateway CGNAT região Sul
+200.200.30.1      # Gateway CGNAT região Leste
+200.200.40.0/24   # Bloco de IPs públicos do CGNAT região Oeste
+
+# === Outros IPs confiáveis ===
+192.168.0.10      # Servidor de monitoramento interno
+10.0.0.0/24       # Rede administrativa interna
+172.16.0.0/16     # Rede corporativa de gerenciamento
+
+# === Observações importantes ===
+# 1. Para clientes CGNAT, adicione o IP PÚBLICO do gateway NAT
+# 2. NÃO adicione os IPs privados (10.x.x.x, 100.64.x.x) dos clientes CGNAT
+# 3. Este arquivo é verificado a cada ciclo de monitoramento
+# 4. Após editar este arquivo, não é necessário reiniciar o serviço
