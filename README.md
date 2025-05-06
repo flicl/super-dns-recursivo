@@ -1,6 +1,6 @@
 # Super DNS Recursivo - Servidor DNS + Monitoramento + Proteção
 
-![Versão](https://img.shields.io/badge/Versão-1.0-blue.svg)
+![Versão](https://img.shields.io/badge/Versão-1.1-blue.svg)
 ![Licença](https://img.shields.io/badge/Licença-MIT-green.svg)
 
 Um servidor DNS recursivo completo baseado no Unbound com monitoramento integrado e proteção contra abusos.
@@ -27,7 +27,7 @@ O sistema é composto por três componentes principais:
 
 1. **Servidor DNS Unbound**: Resolvedor DNS recursivo altamente otimizado
 2. **Sistema de Monitoramento**: Coleta de métricas com Zabbix e visualização com Grafana
-3. **Sistema de Proteção**: Detecção e bloqueio automático de abusos com Fail2ban
+3. **Sistema de Proteção**: Detecção e bloqueio automático de abusos com análise avançada e Fail2ban
 
 ## Guia de Instalação
 
@@ -141,18 +141,49 @@ echo "nameserver ::1" | sudo tee -a /etc/resolv.conf
 
 ### 2. Sistema de Proteção Contra Abusos
 
-O sistema de proteção monitora o tráfego DNS para identificar e bloquear automaticamente tentativas de abuso.
+O sistema de proteção monitora o tráfego DNS para identificar e bloquear automaticamente tentativas de abuso, com recursos avançados de detecção e análise.
 
 ```bash
 # Instalar o sistema de proteção
+sudo chmod +x ./install/dns-protection-setup.sh
 sudo ./install/dns-protection-setup.sh
 ```
 
 Este script configura:
 - Monitoramento de tráfego DNS com dnstop
-- Detecção de requisições abusivas
+- Detecção de requisições abusivas com análise inteligente
+- Sistema de whitelist para IPs confiáveis
+- Detecção de tunneling DNS através de análise de entropia
+- Detecção de ataques baseados em consultas NXDomain
+- Alertas precoces antes de atingir limites críticos
 - Integração com Fail2ban para bloqueio automático
 - Serviço systemd para execução contínua
+
+#### Recursos Avançados de Proteção
+
+##### Análise Automática de Tráfego
+```bash
+# Analisa o tráfego atual por 5 minutos e sugere configurações ideais
+sudo /opt/dns-protection/dns-monitor.sh --analyze
+```
+
+##### Configuração Interativa
+```bash
+# Interface interativa para ajuste de parâmetros
+sudo /opt/dns-protection/dns-monitor.sh --config
+```
+
+##### Whitelist de IPs Confiáveis
+```bash
+# Editar a lista de IPs e redes confiáveis que nunca serão bloqueados
+sudo nano /opt/dns-protection/config/whitelist.txt
+```
+
+##### Modo de Teste
+```bash
+# Executa o monitoramento sem banir IPs (útil para ajustar configurações)
+sudo /opt/dns-protection/dns-monitor.sh --test
+```
 
 Para verificar o status da proteção:
 ```bash
@@ -221,6 +252,9 @@ systemctl status dns-protection
 
 # Listar IPs bloqueados
 fail2ban-client status dns-abuse
+
+# Visualizar logs do sistema de proteção
+tail -f /var/log/dns-abuse.log
 ```
 
 ### Verificar Funcionamento do DNS
@@ -239,7 +273,15 @@ unbound-control stats
 | Falha na inicialização do Unbound | Verifique erros em `/var/log/syslog` ou execute `unbound-checkconf` |
 | Alto uso de CPU | Ajuste o valor de `num-threads` de acordo com o número de CPUs |
 | Baixo desempenho de cache | Aumente os valores de `rrset-cache-size` e `msg-cache-size` |
-| Falsos positivos no sistema de proteção | Ajuste o valor de `MAX_RPS` em `/opt/dns-protection/dns-monitor.sh` |
+| Falsos positivos no sistema de proteção | Use `/opt/dns-protection/dns-monitor.sh --analyze` para encontrar configurações ideais ou adicione IPs à whitelist |
+| Bloqueio de clientes legítimos | Adicione seus IPs confiáveis em `/opt/dns-protection/config/whitelist.txt` |
+
+## Documentação Adicional
+
+Para informações mais detalhadas sobre o sistema de proteção DNS, consulte:
+
+- **Guia Rápido**: `docs/dns-protection-quickstart.md`
+- **Guia Técnico**: `docs/dns-protection-technical-guide.md`
 
 ## Licença
 

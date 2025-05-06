@@ -16,7 +16,7 @@ systemctl status unbound
 
 ```bash
 # Baixar o script (se necessário) para o diretório atual
-# git clone https://seu-repositorio.git
+# git clone https://github.com/flicl/super-dns-recursivo.git
 # cd seu-repositorio
 
 # Tornar executável
@@ -40,9 +40,9 @@ sudo fail2ban-client status dns-abuse
 
 Ajuste os parâmetros principais conforme necessário:
 
-- **Limite de requisições**: Altere o valor de `MAX_RPS` em `/opt/dns-protection/dns-monitor.sh`
-- **Tempo de banimento**: Altere o valor de `bantime` em `/etc/fail2ban/jail.d/dns-abuse.conf`
-- **IPs a serem ignorados**: Adicione IPs confiáveis em `/etc/fail2ban/jail.d/dns-abuse.conf`
+- **Análise e configuração automática**: Execute `sudo /opt/dns-protection/dns-monitor.sh --analyze` para avaliar o tráfego e receber recomendações de configuração
+- **Configuração interativa**: Execute `sudo /opt/dns-protection/dns-monitor.sh --config` para ajustar parâmetros interativamente
+- **Lista de IPs confiáveis**: Edite o arquivo `/opt/dns-protection/config/whitelist.txt` para adicionar IPs e redes que nunca devem ser bloqueados
 
 ## Comandos Úteis
 
@@ -59,6 +59,9 @@ sudo fail2ban-client set dns-abuse unbanip IP_ADDRESS
 # Reiniciar proteção após modificações
 sudo systemctl restart dns-protection
 sudo systemctl restart fail2ban
+
+# Executar em modo de teste (sem banir IPs)
+sudo /opt/dns-protection/dns-monitor.sh --test
 ```
 
 ## Estrutura da Solução
@@ -67,11 +70,12 @@ sudo systemctl restart fail2ban
 - **Logs de abuso**: `/var/log/dns-abuse.log`
 - **Configuração Fail2ban**: `/etc/fail2ban/jail.d/dns-abuse.conf`
 - **Filtro Fail2ban**: `/etc/fail2ban/filter.d/dns-abuse.conf`
+- **Lista de IPs confiáveis**: `/opt/dns-protection/config/whitelist.txt`
 
 ## Solução de Problemas Comuns
 
-- **Alto uso de CPU**: Aumente `MONITOR_INTERVAL` no script principal
-- **Falsos positivos**: Aumente o valor de `MAX_RPS` ou adicione IPs à lista `ignoreip`
+- **Alto uso de CPU**: Aumente `MONITOR_INTERVAL` via modo de configuração interativa
+- **Falsos positivos**: Execute a análise de tráfego para ajustar parâmetros automaticamente ou adicione IPs à lista de confiáveis
 - **Fail2ban não está banindo**: Verifique os logs em `/var/log/fail2ban.log`
 
 ## Documentação Detalhada

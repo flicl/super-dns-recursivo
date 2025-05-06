@@ -95,5 +95,7 @@ fail2ban-client status dns-abuse
    - Verifique se o sistema de proteção está funcionando corretamente
 
 3. **Falsos positivos no sistema de proteção**:
-   - Aumente o valor de `MAX_RPS` em `/opt/dns-protection/dns-monitor.sh`
-   - Adicione IPs confiáveis à lista `ignoreip` em `/etc/fail2ban/jail.d/dns-abuse.conf`
+   - Use o comando `sudo /opt/dns-protection/dns-monitor.sh --analyze` para analisar o tráfego e receber recomendações automáticas de configuração
+   - Configure interativamente usando `sudo /opt/dns-protection/dns-monitor.sh --config`
+   - Adicione IPs e redes confiáveis ao arquivo `/opt/dns-protection/config/whitelist.txt`
+   - Execute em modo de teste com `sudo /opt/dns-protection/dns-monitor.sh --test` para validar as configurações

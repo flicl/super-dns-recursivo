@@ -11,21 +11,26 @@ Este documento apresenta uma solução completa para proteção de servidores DN
 3. **Sistema de logs**: Registra detalhes de abusos para análise posterior
 4. **Fail2ban**: Serviço de mitigação que efetua o bloqueio dos IPs abusivos
 5. **Serviço systemd**: Gerencia o ciclo de vida do processo de monitoramento
+6. **Sistema de whitelist**: Gerencia a lista de endereços IP confiáveis
+7. **Análise de entropia DNS**: Detecta possíveis ataques de tunneling DNS
+8. **Análise de consultas NXDomain**: Identifica ataques baseados em domínios inexistentes
 
 ### 1.2. Fluxo de Operação
 
 ```
-[Tráfego DNS] → [tcpdump] → [dnstop] → [Script de Análise] → [Logs de Abuso] → [Fail2ban] → [Regras iptables]
+[Tráfego DNS] → [tcpdump] → [dnstop] → [Verificação Whitelist] → [Análise Avançada] → [Script de Análise] → [Logs de Abuso] → [Fail2ban] → [Regras iptables]
 ```
 
 O fluxo completo de operação ocorre da seguinte forma:
 
 1. O tráfego DNS na porta 53 (UDP/TCP) é capturado pelo tcpdump
 2. Os pacotes capturados são analisados em tempo real pelo dnstop
-3. O script de análise processa a saída do dnstop e identifica IPs que excedem o limite de requisições
-4. Os eventos de abuso são registrados em um arquivo de log específico
-5. O Fail2ban monitora esse arquivo de log e aciona ações quando detecta padrões de abuso
-6. O Fail2ban cria regras no iptables para bloquear o acesso dos IPs abusivos
+3. Os IPs de origem são verificados contra a lista de IPs confiáveis
+4. Análises avançadas são realizadas para detectar padrões de ataque (tunneling, alta taxa de NXDomain)
+5. O script de análise processa a saída do dnstop e identifica IPs que excedem o limite de requisições
+6. Os eventos de abuso são registrados em um arquivo de log específico
+7. O Fail2ban monitora esse arquivo de log e aciona ações quando detecta padrões de abuso
+8. O Fail2ban cria regras no iptables para bloquear o acesso dos IPs abusivos
 
 ## 2. Instalação e Configuração Detalhada
 
@@ -168,64 +173,88 @@ sudo systemctl start dns-protection
 
 ## 3. Customização e Otimização
 
-### 3.1. Ajuste de Limites de Requisições
+### 3.1. Análise Automática de Tráfego
 
-O limite padrão é de 100 requisições por segundo. Para sistemas com diferentes perfis de carga, esse valor pode ser ajustado:
+A solução inclui um modo de análise que monitora o tráfego real por 5 minutos e sugere configurações otimizadas:
+
+```bash
+# Executar análise automática
+sudo /opt/dns-protection/dns-monitor.sh --analyze
+```
+
+Este modo calcula estatísticas como:
+- RPS máximo detectado
+- RPS médio por cliente
+- Total de consultas
+- Total de IPs únicos
+
+E sugere configurações ideais baseadas nessas métricas.
+
+### 3.2. Configuração Interativa
+
+Para simplificar o ajuste dos parâmetros sem editar arquivos manualmente:
+
+```bash
+# Executar modo de configuração interativa
+sudo /opt/dns-protection/dns-monitor.sh --config
+```
+
+Este modo permite configurar interativamente:
+- Limite de requisições por segundo (MAX_RPS)
+- Intervalo de monitoramento
+- Percentual de alerta (quando alertar antes de banir)
+- Lista de IPs confiáveis
+
+### 3.3. Gerenciamento de Whitelist
+
+A solução agora inclui um sistema de whitelist dedicado:
+
+```bash
+# Editar a lista de IPs confiáveis
+sudo nano /opt/dns-protection/config/whitelist.txt
+```
+
+O arquivo suporta:
+- IPs individuais (ex: 192.168.1.10)
+- Redes CIDR (ex: 10.0.0.0/8)
+- Comentários (linhas começando com #)
+
+Os IPs/redes listados neste arquivo nunca serão bloqueados, independentemente do volume de tráfego.
+
+### 3.4. Ajuste de Limites de Requisições
+
+O limite padrão agora é de 300 requisições por segundo. Para sistemas com diferentes perfis de carga, esse valor pode ser ajustado:
 
 ```bash
 # Editar o script de monitoramento
 sudo nano /opt/dns-protection/dns-monitor.sh
 
 # Alterar o valor da variável MAX_RPS
-# Por exemplo, para 150 requisições por segundo:
-MAX_RPS=150
+# Por exemplo, para 500 requisições por segundo:
+MAX_RPS=500
 ```
 
-### 3.2. Configuração de Tempo de Banimento
+### 3.5. Detecção Avançada de Ataques
 
-O tempo padrão de banimento é de 1 hora (3600 segundos). Para ajustar:
+A solução inclui detecção de:
 
-```bash
-# Editar a configuração da jail
-sudo nano /etc/fail2ban/jail.d/dns-abuse.conf
+1. **Tunneling DNS**: Baseado na entropia das consultas DNS
+   ```bash
+   # Ajustar limiar de entropia
+   QUERY_ENTROPY_THRESHOLD=4.0
+   ```
 
-# Modificar o parâmetro bantime
-# Por exemplo, para banir por 2 horas:
-bantime = 7200
-```
+2. **Ataques de NXDomain**: Monitorando percentual de consultas para domínios inexistentes
+   ```bash
+   # Ajustar percentual de alerta
+   MAX_NX_DOMAIN_PERCENT=30
+   ```
 
-### 3.3. Configuração de IPs Confiáveis
-
-Para evitar o banimento de IPs legítimos (como servidores internos, proxies, ou outras infraestruturas confiáveis):
-
-```bash
-# Editar a configuração da jail
-sudo nano /etc/fail2ban/jail.d/dns-abuse.conf
-
-# Adicionar a linha ignoreip com os IPs/redes a serem ignorados
-ignoreip = 127.0.0.1/8 10.0.0.0/8 192.168.1.0/24
-```
-
-### 3.4. Otimização para Servidores com Alto Tráfego
-
-Para servidores que processam grandes volumes de tráfego DNS, recomenda-se:
-
-1. Aumentar o intervalo de captura para reduzir o impacto no processador:
-
-```bash
-# Editar o script de monitoramento
-sudo nano /opt/dns-protection/dns-monitor.sh
-
-# Aumentar o intervalo de monitoramento, por exemplo, para 120 segundos:
-MONITOR_INTERVAL=120
-```
-
-2. Ajustar o filtro para focar apenas nos tipos de tráfego mais relevantes:
-
-```bash
-# Modificar o filtro tcpdump no script para capturar apenas UDP (que geralmente representa a maior parte do tráfego DNS)
-DNS_PORT="port 53 and udp"
-```
+3. **Alerta precoce**: Emitir alertas quando um IP se aproxima do limite configurado
+   ```bash
+   # Percentual do limite para emitir alertas
+   ALERT_THRESHOLD=80
+   ```
 
 ## 4. Monitoramento e Verificação
 
@@ -389,18 +418,22 @@ sudo cp /etc/fail2ban/filter.d/dns-abuse.conf $BACKUP_DIR/
 sudo cp /etc/fail2ban/jail.d/dns-abuse.conf $BACKUP_DIR/
 ```
 
-### 6.4. Monitoramento Integrado
+### 6.4. Monitoramento Periódico
 
-Considere integrar o monitoramento de IPs banidos com sistemas existentes como Zabbix:
+Realize periodicamente a análise do tráfego para verificar se os limites ainda são adequados:
 
 ```bash
-# Script para enviar contagem de IPs banidos para o Zabbix
-# Salve como /opt/dns-protection/zabbix-integration.sh
-#!/bin/bash
-IP_ZABBIX="seu_ip_zabbix"
-HOST_NAME="seu_host_dns"
-BANNED_COUNT=$(fail2ban-client status dns-abuse | grep "Currently banned" | awk '{print $4}')
-zabbix_sender -z $IP_ZABBIX -s $HOST_NAME -k dns.banned.count -o $BANNED_COUNT
+# Analisar tráfego atual e receber recomendações
+sudo /opt/dns-protection/dns-monitor.sh --analyze
+```
+
+### 6.5. Atualização da Whitelist
+
+Mantenha sua lista de IPs confiáveis atualizada, removendo IPs que não são mais relevantes e adicionando novos IPs confiáveis:
+
+```bash
+# Editar a whitelist
+sudo nano /opt/dns-protection/config/whitelist.txt
 ```
 
 ## 7. Informações Adicionais
@@ -408,6 +441,8 @@ zabbix_sender -z $IP_ZABBIX -s $HOST_NAME -k dns.banned.count -o $BANNED_COUNT
 ### 7.1. Arquivos Principais
 
 - **Script principal**: `/opt/dns-protection/dns-monitor.sh`
+- **Whitelist**: `/opt/dns-protection/config/whitelist.txt`
+- **Arquivos temporários**: `/opt/dns-protection/temp/`
 - **Filtro Fail2ban**: `/etc/fail2ban/filter.d/dns-abuse.conf`
 - **Configuração da jail**: `/etc/fail2ban/jail.d/dns-abuse.conf`
 - **Arquivo de log**: `/var/log/dns-abuse.log`
@@ -425,6 +460,12 @@ sudo fail2ban-client set dns-abuse unbanip IP_ADDRESS
 
 # Recarregar configuração do Fail2ban sem reiniciar
 sudo fail2ban-client reload dns-abuse
+
+# Executar monitoramento no modo de teste (não bane IPs)
+sudo /opt/dns-protection/dns-monitor.sh --test --once
+
+# Executar em modo debug com informações adicionais
+sudo /opt/dns-protection/dns-monitor.sh --debug --once
 ```
 
 ### 7.3. Recursos e Referências
