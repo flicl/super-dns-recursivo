@@ -164,20 +164,17 @@ sudo fail2ban-client status dns-abuse
 
 ```bash
 # Instalar o zabbix-sender para o seu sistema operacional
-## Para Ubuntu 20.04
-sudo wget https://repo.zabbix.com/zabbix/6.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_6.0-4+ubuntu20.04_all.deb
-sudo dpkg -i zabbix-release_6.0-4+ubuntu20.04_all.deb
+## Para Debian 10/11/12
+sudo wget https://repo.zabbix.com/zabbix/6.4/debian/pool/main/z/zabbix-release/zabbix-release_6.4-1+debian$(lsb_release -rs)_all.deb
+sudo dpkg -i zabbix-release_6.4-1+debian$(lsb_release -rs)_all.deb
 sudo apt update
 sudo apt install zabbix-sender
 
-## Para Ubuntu 22.04
-sudo wget https://repo.zabbix.com/zabbix/6.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_6.0-4+ubuntu22.04_all.deb
-sudo dpkg -i zabbix-release_6.0-4+ubuntu22.04_all.deb
+## Para Ubuntu 20.04/22.04/24.04
+sudo wget https://repo.zabbix.com/zabbix/6.4/ubuntu/pool/main/z/zabbix-release/zabbix-release_6.4-1+ubuntu$(lsb_release -rs)_all.deb
+sudo dpkg -i zabbix-release_6.4-1+ubuntu$(lsb_release -rs)_all.deb
 sudo apt update
 sudo apt install zabbix-sender
-
-## Para Debian (selecione a versão adequada)
-# Debian 10, 11 ou 12 - consulte a documentação para a versão exata
 ```
 
 Configurar os scripts de monitoramento:
