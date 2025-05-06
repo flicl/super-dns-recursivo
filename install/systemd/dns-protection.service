@@ -1,0 +1,17 @@
+[Unit]
+Description=Serviço de Proteção contra Abuso de DNS
+After=network.target unbound.service
+Wants=unbound.service
+
+[Service]
+Type=simple
+ExecStart=/opt/dns-protection/dns-monitor.sh
+Restart=always
+RestartSec=10
+User=root
+Group=root
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
