@@ -1,360 +1,253 @@
-# DNS Recursivo Unbound + Monitoramento
+# Super DNS Recursivo - Servidor DNS + Monitoramento + Proteção
 
-Neste repositório, você encontrará o passo a passo para a criação de um DNS Recursivo utilizando o Unbound e a realização do monitoramento utilizando o Zabbix com um painel detalhado no Grafana.
+![Versão](https://img.shields.io/badge/Versão-1.0-blue.svg)
+![Licença](https://img.shields.io/badge/Licença-MIT-green.svg)
 
-As versões utilizadas foram:
+Um servidor DNS recursivo completo baseado no Unbound com monitoramento integrado e proteção contra abusos.
 
-- Ubuntu 20.04 LTS
-- Ubuntu 22.04 LTS
-- Debian 10, 11 e 12
+## Visão Geral
 
-> Todas as versões foram testadas usando uma instalação limpa e o modo “container” do Proxmox.
+O Super DNS Recursivo oferece uma solução completa para serviços DNS em provedores de Internet e empresas, com foco em:
 
-## Instalação
-O processo abaixo visa instalar o DNS, bem como ajustar o servidor para o envio de métricas de monitoramento para o Zabbix. Será utilizado o zabbix-sender no lugar do zabbix-agent, pois, caso seja utilizado o container de Proxmox, as coletas serão feitas do CT e não do PVE como um todo.
+- **Alto Desempenho**: Configuração otimizada do Unbound para ambientes corporativos e de ISP
+- **Monitoramento Detalhado**: Integração com Zabbix e Grafana para métricas em tempo real
+- **Proteção Avançada**: Sistema de detecção e mitigação de ataques e abusos DNS
+- **Fácil Implantação**: Scripts de instalação automatizados
 
-### Instalação - Unbound
+## Plataformas Suportadas
+
+- Ubuntu 20.04 LTS / 22.04 LTS
+- Debian 10 / 11 / 12
+
+> Todas as versões foram testadas em instalações limpas e em modo "container" do Proxmox.
+
+## Componentes do Sistema
+
+O sistema é composto por três componentes principais:
+
+1. **Servidor DNS Unbound**: Resolvedor DNS recursivo altamente otimizado
+2. **Sistema de Monitoramento**: Coleta de métricas com Zabbix e visualização com Grafana
+3. **Sistema de Proteção**: Detecção e bloqueio automático de abusos com Fail2ban
+
+## Guia de Instalação
+
+### 1. Servidor DNS Unbound
 
 ```bash
-#Atualizando as dependencias
+# Atualizar dependências
 sudo apt update && sudo apt upgrade -y
 
-#Instalação das dependencias necessárias
+# Instalar componentes necessários
 sudo apt install unbound net-tools unbound-anchor wget dnsutils dnstop -y
 
-#Parametrizando o Unbound
+# Configurar Unbound
 cd /etc/unbound
-mv unbound.conf unbound.conf.bkp
-nano unbound.conf
-
+sudo mv unbound.conf unbound.conf.bkp
+sudo nano unbound.conf
 ```
-Cole o arquivo abaixo, editando de acordo com os comentários e sua realidade em relação aos prefixos.
 
-```bash
+Cole o seguinte conteúdo no arquivo de configuração, ajustando conforme necessário:
+
+```properties
 # TriplePlay Network
-#
 # Unbound DNS Server V1.0
-#
-
 
 include: "/etc/unbound/unbound.conf.d/*.conf"
 
-#Habilitar uso do unbound-control
+# Habilitar uso do unbound-control
 remote-control:
   control-enable: yes
 
-#Configuração do servidor
+# Configuração do servidor
 server:
+  # LOGS DE USO - Descomente apenas para debug
+  # chroot: ""
+  # logfile: /var/log/syslog.log
+  # verbosity: 1
+  # log-queries: yes
 
-#LOGS DE USO - Descomente apenas para debug
-
-#  chroot: ""
-#  logfile: /var/log/syslog.log
-#  verbosity: 1
-#  log-queries: yes
-
-#Estatiticas de Uso para Monitoramento
-
+  # Estatísticas de Uso para Monitoramento
   statistics-interval: 0
   extended-statistics: yes
   statistics-cumulative: no
   port: 53
   
-#Lista de Interface - descomente caso queira usar Anycast
-# ou adicione novas interfaces caso necessário
-
+  # Lista de Interfaces
   interface: 0.0.0.0
   interface: ::0
-#  interface: 8.8.8.8
-#  interface: 8.8.4.4
   interface: 127.0.0.1
   interface: ::1
 
-#Lista de IPs com acesso permitido nas consultas
-# Adicone os IPs de seu provedor
-
+  # Lista de IPs com acesso permitido
   access-control: 127.0.0.1 allow
   access-control: ::1 allow
-
   access-control: 10.0.0.0/8 allow
   access-control: 100.64.0.0/10 allow
   access-control: 127.0.0.0/8 allow
   access-control: 172.16.0.0/12 allow
   access-control: 192.168.0.0/16 allow
 
-
-
-# ==> Tunning
-  #CPUs
+  # Tunning de Desempenho
   num-threads: 4
-
-  #*-slabs = num-treads * 2
-
   msg-cache-slabs: 8
   rrset-cache-slabs: 8
   infra-cache-slabs: 8
   key-cache-slabs: 8
-
-  #Aprimora pacotes udp com multithreading
   so-reuseport: yes
-
-  #Conexoes por thread ~ 1024/cores - 50
   outgoing-range: 200
-  
-  #Aumenta cache rrset (resource records)
-  #uso total ~ 384m * msg-cache = 1512m ou 1.5g
-
   rrset-cache-size: 256m
   msg-cache-size: 128m
-
-
-  #Tempo (em segundos) para manter em cache
   cache-min-ttl: 3600
   cache-max-ttl: 10800
 
-  #Aceitar requicao ipv4, ipv6, udp ou tcp
-  #Se nao aceitar ipv6, entao a resolucao vai para ipv4
-
+  # Protocolos Suportados
   do-ip4: yes
   do-ip6: yes
   do-tcp: yes
   do-udp: yes
   
-  #Arquivo onde tem a lista de root servers
+  # Arquivo de Hints
   root-hints: "/etc/unbound/named.cache"
   
-  #Seguranca
+  # Configurações de Segurança
   hide-identity: yes
   hide-version: yes
   harden-glue: yes
   harden-dnssec-stripped: yes
-
 ```
 
-Ainda na pasta do Unbound, faça o download do arquivo de zonas raiz (root-zones).
-
-``` bash
-wget https://www.internic.net/domain/named.cache
-```
-
-> Caso esteja usando Ubuntu, desative o resolverdor nativo (systemd-resolved).
-```bash
-service systemd-resolved stop
-systemctl disable systemd-resolved.service
-```
-Finalize as configurações do Unbound.
-```bash
-# Verifica se há algum erro no arquivo de configuração do unbound
-unbound-checkconf
-
-# Habilita o Unbound para inicar junto com o sistema
-systemctl enable unbound
-systemctl restart unbound
-
-# Habilta o Unbound Control
-unbound-control-setup
-
-#Reinicia o Unbound e o unbound control
-systemctl restart unbound
-unbound-control reload
-systemctl restart unbound
-```
-
-Após esse processo, faça o servidor consultar a si mesmo, alterando o ```/etc/resolv.conf``` e colocando ```nameserver 127.0.0.1``` e ```nameserver ::1```.
-
-### Instalação - Monitoramento 
-Neste processo, vamos instalar o zabbix-sender, configurar o cron para o envio de dados e adicionar os scripts de monitoramento.
-
-> Caso esteja usando Ubuntu como container no proxmox faça o link do unbound-control.
-```bash
-ln -s /usr/sbin/unbound-control /usr/bin/unbound-control
-```
-
+Finalize a configuração:
 
 ```bash
-#Atualizando as dependencias
-sudo apt update && sudo apt upgrade -y
+# Baixar lista de servidores raiz
+wget https://www.internic.net/domain/named.cache -O /etc/unbound/named.cache
 
-#Instalação das dependencias do Zabbix
-## Ubuntu 20.04
-wget https://repo.zabbix.com/zabbix/6.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_6.0-4+ubuntu20.04_all.deb
-dpkg -i zabbix-release_6.0-4+ubuntu20.04_all.deb
-apt update
-apt install zabbix-sender
+# Caso esteja usando Ubuntu, desativar o resolver nativo
+sudo service systemd-resolved stop
+sudo systemctl disable systemd-resolved.service
 
-## Ubuntu 22.04
-wget https://repo.zabbix.com/zabbix/6.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_6.0-4+ubuntu22.04_all.deb
-dpkg -i zabbix-release_6.0-4+ubuntu22.04_all.deb
-apt update
-apt install zabbix-sender
+# Validar, habilitar e iniciar o serviço
+sudo unbound-checkconf
+sudo systemctl enable unbound
+sudo systemctl restart unbound
+sudo unbound-control-setup
+sudo systemctl restart unbound
+sudo unbound-control reload
 
-## Debian 10
-wget https://repo.zabbix.com/zabbix/6.0/debian/pool/main/z/zabbix-release/zabbix-release_6.0-4+debian10_all.deb
-dpkg -i zabbix-release_6.0-4+debian10_all.deb
-apt update
-apt install zabbix-sender
-
-## Debian 11
-wget https://repo.zabbix.com/zabbix/6.0/debian/pool/main/z/zabbix-release/zabbix-release_6.0-4+debian11_all.deb
-dpkg -i zabbix-release_6.0-4+debian11_all.deb
-apt update
-apt install zabbix-sender
-
-## Debian 12
-wget https://repo.zabbix.com/zabbix/6.0/debian/pool/main/z/zabbix-release/zabbix-release_6.0-5+debian12_all.deb
-dpkg -i zabbix-release_6.0-5+debian12_all.deb
-apt update
-apt install zabbix-sender
-
-```
-Adicione os scripts de monitoramento.
-
-> serverMonitoring.sh
-
-```nano /etc/unbound/serverMonitoring.sh```
-```bash
-#!/bin/bash
-# Copyright (c) 2025 TriplePlay Network
-# Contact: contato@tripleplay.network
-
-if [ -z ${1} ] || [ -z ${2} ] ; then
-	echo "You need to specify the IP address of zabbix server and hostname of your DNS Unbound on zabbix"
-	exit 1
-fi
-
-# ZABBIX_SERVER IP
-IP_ZABBIX=$1
-# NAME Unbound on Zabbix
-NAME_HOST=$2
-
-cpuUsage=$(top -bn1 | awk '/Cpu/ { print $2}')
-
-memTotal=$(free -b | awk '/Mem/{print $2}')
-memUsage=$(free -b | awk '/Mem/{print $3}')
-memFree=$(free -b | awk '/Mem/{print $4}')
-
-
-#	Sending info to zabbix_server, if variables is not empty!
-[ -z ${cpuUsage} ] ||  zabbix_sender -z ${IP_ZABBIX} -s ${NAME_HOST} -k cpu.usage -o ${cpuUsage}
-
-[ -z ${memTotal} ] || zabbix_sender -z ${IP_ZABBIX} -s ${NAME_HOST} -k mem.total -o ${memTotal}
-[ -z ${memUsage} ] || zabbix_sender -z ${IP_ZABBIX} -s ${NAME_HOST} -k mem.usage -o ${memUsage}
-[ -z ${memFree} ] || zabbix_sender -z ${IP_ZABBIX} -s ${NAME_HOST} -k mem.free -o ${memFree}
-
-```
-> unboundMonitoring.sh
-
-```nano /etc/unbound/unboundMonitoring.sh```
-```bash
-#!/bin/bash
-# Copyright (c) 2025 TriplePlay Network
-# Contact: contato@tripleplay.network
-
-
-if [ -z ${1} ] || [ -z ${2} ] ; then
-	echo "You need to specify the IP address of zabbix server and hostname of your DNS Unbound on zabbix"
-	exit 1
-fi
-
-# ZABBIX_SERVER IP
-IP_ZABBIX=$1
-# NAME Unbound on Zabbix
-NAME_HOST=$2
-DIR_TEMP=/var/tmp/
-FILE="${DIR_TEMP}dump_unbound_control_stats.txt"
-unbound-control stats > ${FILE}
-
-TOTAL_NUM_QUERIES=$(cat ${FILE} | grep -w 'total.num.queries' | cut -d '=' -f2)
-TOTAL_NUM_CACHEHITS=$(cat ${FILE} | grep -w 'total.num.cachehits' | cut -d '=' -f2)
-TOTAL_NUM_CACHEMISS=$(cat ${FILE} | grep -w 'total.num.cachemiss' | cut -d '=' -f2)
-TOTAL_NUM_PREFETCH=$(cat ${FILE} | grep -w 'total.num.prefetch' | cut -d '=' -f2)
-TOTAL_NUM_RECURSIVEREPLIES=$(cat ${FILE} | grep -w 'total.num.recursivereplies' | cut -d '=' -f2)
-
-TOTAL_REQ_MAX=$(cat ${FILE} | grep -w 'total.requestlist.max' | cut -d '=' -f2)
-TOTAL_REQ_AVG=$(cat ${FILE} | grep -w 'total.requestlist.avg' | cut -d '=' -f2)
-TOTAL_REQ_OVERWRITTEN=$(cat ${FILE} | grep -w 'total.requestlist.overwritten' | cut -d '=' -f2)
-TOTAL_REQ_EXCEEDED=$(cat ${FILE} | grep -w 'total.requestlist.exceeded' | cut -d '=' -f2)
-TOTAL_REQ_CURRENT_ALL=$(cat ${FILE} | grep -w 'total.requestlist.current.all' | cut -d '=' -f2)
-TOTAL_REQ_CURRENT_USER=$(cat ${FILE} | grep -w 'total.requestlist.current.user' | cut -d '=' -f2)
-
-MED_RECURSION_TIME=$(cat ${FILE} | grep -w 'total.recursion.time.avg' | cut -d '=' -f2)
-
-TOTAL_TCPUSAGE=$(cat ${FILE} | grep -w 'total.tcpusage' | cut -d '=' -f2)
-
-NUM_QUERY_TYPE_A=$(cat ${FILE} | grep -w 'num.query.type.A' | cut -d '=' -f2)
-NUM_QUERY_TYPE_NS=$(cat ${FILE} | grep -w 'num.query.type.NS' | cut -d '=' -f2)
-NUM_QUERY_TYPE_MX=$(cat ${FILE} | grep -w 'num.query.type.MX' | cut -d '=' -f2)
-NUM_QUERY_TYPE_TXT=$(cat ${FILE} | grep -w 'num.query.type.TXT' | cut -d '=' -f2)
-NUM_QUERY_TYPE_PTR=$(cat ${FILE} | grep -w 'num.query.type.PTR' | cut -d '=' -f2)
-NUM_QUERY_TYPE_AAAA=$(cat ${FILE} | grep -w 'num.query.type.AAAA' | cut -d '=' -f2)
-NUM_QUERY_TYPE_SRV=$(cat ${FILE} | grep -w 'num.query.type.SRV' | cut -d '=' -f2)
-NUM_QUERY_TYPE_SOA=$(cat ${FILE} | grep -w 'num.query.type.SOA' | cut -d '=' -f2)
-
-NUM_ANSWER_RCODE_NOERROR=$(cat ${FILE} | grep -w 'num.answer.rcode.NOERROR' | cut -d '=' -f2)
-NUM_ANSWER_RCODE_NXDOMAIN=$(cat ${FILE} | grep -w 'num.answer.rcode.NXDOMAIN' | cut -d '=' -f2)
-NUM_ANSWER_RCODE_SERVFAIL=$(cat ${FILE} | grep -w 'num.answer.rcode.SERVFAIL' | cut -d '=' -f2)
-NUM_ANSWER_RCODE_REFUSED=$(cat ${FILE} | grep -w 'num.answer.rcode.REFUSED' | cut -d '=' -f2)
-NUM_ANSWER_RCODE_nodata=$(cat ${FILE} | grep -w 'num.answer.rcode.nodata' | cut -d '=' -f2)
-NUM_ANSWER_secure=$(cat ${FILE} | grep -w 'num.answer.secure' | cut -d '=' -f2)
-
-#	Sending info to zabbix_server, if variables is not empty!
-[ -z ${TOTAL_NUM_QUERIES} ] ||  zabbix_sender -z ${IP_ZABBIX} -s ${NAME_HOST} -k total.num.queries -o ${TOTAL_NUM_QUERIES}
-[ -z ${TOTAL_NUM_CACHEHITS} ] || zabbix_sender -z ${IP_ZABBIX} -s ${NAME_HOST} -k total.num.cachehits -o ${TOTAL_NUM_CACHEHITS}
-[ -z ${TOTAL_NUM_CACHEMISS} ] || zabbix_sender -z ${IP_ZABBIX} -s ${NAME_HOST} -k total.num.cachemiss -o ${TOTAL_NUM_CACHEMISS}
-[ -z ${TOTAL_NUM_PREFETCH} ] || zabbix_sender -z ${IP_ZABBIX} -s ${NAME_HOST} -k total.num.prefetch -o ${TOTAL_NUM_PREFETCH}
-[ -z ${TOTAL_NUM_RECURSIVEREPLIES} ] || zabbix_sender -z ${IP_ZABBIX} -s ${NAME_HOST} -k total.num.recursivereplies -o ${TOTAL_NUM_RECURSIVEREPLIES}
-
-[ -z ${TOTAL_REQ_MAX} ] || zabbix_sender -z ${IP_ZABBIX} -s ${NAME_HOST} -k total.requestlist.max -o ${TOTAL_REQ_MAX}
-[ -z ${TOTAL_REQ_AVG} ] || zabbix_sender -z ${IP_ZABBIX} -s ${NAME_HOST} -k total.requestlist.avg -o ${TOTAL_REQ_AVG}
-[ -z ${TOTAL_REQ_OVERWRITTEN} ] || zabbix_sender -z ${IP_ZABBIX} -s ${NAME_HOST} -k total.requestlist.overwritten -o ${TOTAL_REQ_OVERWRITTEN}
-[ -z ${TOTAL_REQ_EXCEEDED} ] ||  zabbix_sender -z ${IP_ZABBIX} -s ${NAME_HOST} -k total.requestlist.exceeded -o ${TOTAL_REQ_EXCEEDED}
-[ -z ${TOTAL_REQ_CURRENT_ALL} ] || zabbix_sender -z ${IP_ZABBIX} -s ${NAME_HOST} -k total.requestlist.current.all -o ${TOTAL_REQ_CURRENT_ALL}
-[ -z ${TOTAL_REQ_CURRENT_USER} ] || zabbix_sender -z ${IP_ZABBIX} -s ${NAME_HOST} -k total.requestlist.current.user -o ${TOTAL_REQ_CURRENT_USER}
-
-[ -z ${MED_RECURSION_TIME} ] || zabbix_sender -z ${IP_ZABBIX} -s ${NAME_HOST} -k avg.recursion.time -o ${MED_RECURSION_TIME}
-
-[ -z ${TOTAL_TCPUSAGE} ] || zabbix_sender -z ${IP_ZABBIX} -s ${NAME_HOST} -k total.tcpusage -o ${TOTAL_TCPUSAGE}
-
-[ -z ${NUM_QUERY_TYPE_A} ] || zabbix_sender -z ${IP_ZABBIX} -s ${NAME_HOST} -k num.query.a -o ${NUM_QUERY_TYPE_A}
-[ -z ${NUM_QUERY_TYPE_NS} ] || zabbix_sender -z ${IP_ZABBIX} -s ${NAME_HOST} -k num.query.ns -o ${NUM_QUERY_TYPE_NS}
-[ -z ${NUM_QUERY_TYPE_MX} ] || zabbix_sender -z ${IP_ZABBIX} -s ${NAME_HOST} -k num.query.mx -o ${NUM_QUERY_TYPE_MX}
-[ -z ${NUM_QUERY_TYPE_TXT} ] || zabbix_sender -z ${IP_ZABBIX} -s ${NAME_HOST} -k num.query.txt -o ${NUM_QUERY_TYPE_TXT}
-[ -z ${NUM_QUERY_TYPE_PTR} ] || zabbix_sender -z ${IP_ZABBIX} -s ${NAME_HOST} -k num.query.ptr -o ${NUM_QUERY_TYPE_PTR}
-[ -z ${NUM_QUERY_TYPE_AAAA} ] || zabbix_sender -z ${IP_ZABBIX} -s ${NAME_HOST} -k num.query.aaaa -o ${NUM_QUERY_TYPE_AAAA}
-[ -z ${NUM_QUERY_TYPE_SRV} ] || zabbix_sender -z ${IP_ZABBIX} -s ${NAME_HOST} -k num.query.srv -o ${NUM_QUERY_TYPE_SRV}
-[ -z ${NUM_QUERY_TYPE_SOA} ] || zabbix_sender -z ${IP_ZABBIX} -s ${NAME_HOST} -k num.query.soa -o ${NUM_QUERY_TYPE_SOA}
-
-[ -z ${NUM_ANSWER_RCODE_NOERROR} ] || zabbix_sender -z ${IP_ZABBIX} -s ${NAME_HOST} -k num.answer.rcode.NOERROR -o ${NUM_ANSWER_RCODE_NOERROR}
-[ -z ${NUM_ANSWER_RCODE_NXDOMAIN} ] || zabbix_sender -z ${IP_ZABBIX} -s ${NAME_HOST} -k num.answer.rcode.NXDOMAIN -o ${NUM_ANSWER_RCODE_NXDOMAIN}
-[ -z ${NUM_ANSWER_RCODE_SERVFAIL} ] || zabbix_sender -z ${IP_ZABBIX} -s ${NAME_HOST} -k num.answer.rcode.SERVFAIL -o ${NUM_ANSWER_RCODE_SERVFAIL}
-[ -z ${NUM_ANSWER_RCODE_REFUSED} ] || zabbix_sender -z ${IP_ZABBIX} -s ${NAME_HOST} -k num.answer.rcode.REFUSED -o ${NUM_ANSWER_RCODE_REFUSED}
-[ -z ${NUM_ANSWER_RCODE_nodata} ] || zabbix_sender -z ${IP_ZABBIX} -s ${NAME_HOST} -k num.answer.rcode.nodata -o ${NUM_ANSWER_RCODE_nodata}
-[ -z ${NUM_ANSWER_secure} ] || zabbix_sender -z ${IP_ZABBIX} -s ${NAME_HOST} -k num.answer.secure -o ${NUM_ANSWER_secure}
-
+# Configurar o servidor para usar o DNS local
+echo "nameserver 127.0.0.1" | sudo tee /etc/resolv.conf
+echo "nameserver ::1" | sudo tee -a /etc/resolv.conf
 ```
 
-Dê as permissões de execução
+### 2. Sistema de Proteção Contra Abusos
+
+O sistema de proteção monitora o tráfego DNS para identificar e bloquear automaticamente tentativas de abuso.
 
 ```bash
-chmod +x /etc/unbound/*.sh
+# Instalar o sistema de proteção
+sudo ./install/dns-protection-setup.sh
 ```
 
-Acesse o agendador cron e adicione a execução dos dois scripts
+Este script configura:
+- Monitoramento de tráfego DNS com dnstop
+- Detecção de requisições abusivas
+- Integração com Fail2ban para bloqueio automático
+- Serviço systemd para execução contínua
 
+Para verificar o status da proteção:
+```bash
+sudo systemctl status dns-protection
+sudo fail2ban-client status dns-abuse
+```
+
+### 3. Sistema de Monitoramento
 
 ```bash
-#Acesse o editor do cron
-crontab -e
+# Instalar o zabbix-sender para o seu sistema operacional
+## Para Ubuntu 20.04
+sudo wget https://repo.zabbix.com/zabbix/6.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_6.0-4+ubuntu20.04_all.deb
+sudo dpkg -i zabbix-release_6.0-4+ubuntu20.04_all.deb
+sudo apt update
+sudo apt install zabbix-sender
 
-# Adicione os scripts
+## Para Ubuntu 22.04
+sudo wget https://repo.zabbix.com/zabbix/6.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_6.0-4+ubuntu22.04_all.deb
+sudo dpkg -i zabbix-release_6.0-4+ubuntu22.04_all.deb
+sudo apt update
+sudo apt install zabbix-sender
+
+## Para Debian (selecione a versão adequada)
+# Debian 10, 11 ou 12 - consulte a documentação para a versão exata
+```
+
+Configurar os scripts de monitoramento:
+
+```bash
+# Copiar e configurar os scripts
+sudo cp ./scripts/monitoring/*.sh /etc/unbound/
+sudo chmod +x /etc/unbound/*.sh
+
+# Configurar o agendamento com cron
+sudo crontab -e
+
+# Adicionar as linhas:
 */1 * * * * /etc/unbound/serverMonitoring.sh IP-DO-ZABBIX NOME-DO-HOST-DNS >/dev/null 2>&1
 */3 * * * * /etc/unbound/unboundMonitoring.sh IP-DO-ZABBIX NOME-DO-HOST-DNS >/dev/null 2>&1
-
 ```
 
-### Instalação - Templates (Zabbix / Grafana)
+#### Importação dos Templates
 
-Importe os templates de monitoramnto para o zabbix e grafana.
+##### Zabbix
+1. Acesse seu servidor Zabbix (5.4+)
+2. Navegue até **Configuração** > **Templates**
+3. Clique em **Importar**
+4. Selecione o arquivo `templates/zabbix/dns-server-template.yaml`
+5. Confirme a importação
 
-- Zabbix 5.4 +
-- Grafana 10.2.1 +
+##### Grafana
+1. Acesse seu servidor Grafana (10.2.1+)
+2. Navegue até **Dashboards** > **Import**
+3. Clique em **Upload JSON file**
+4. Selecione o arquivo `templates/grafana/dns-monitoring-dashboard.json`
+5. Selecione o datasource do Zabbix que contém os dados do servidor DNS
+6. Clique em **Import**
+
+## Verificação e Solução de Problemas
+
+### Verificar Status dos Serviços
+```bash
+# Status do servidor DNS
+systemctl status unbound
+
+# Status da proteção contra abusos
+systemctl status dns-protection
+
+# Listar IPs bloqueados
+fail2ban-client status dns-abuse
+```
+
+### Verificar Funcionamento do DNS
+```bash
+# Testar resolução de nomes
+dig @127.0.0.1 google.com
+
+# Verificar estatísticas do servidor
+unbound-control stats
+```
+
+### Problemas Comuns
+
+| Problema | Solução |
+|----------|---------|
+| Falha na inicialização do Unbound | Verifique erros em `/var/log/syslog` ou execute `unbound-checkconf` |
+| Alto uso de CPU | Ajuste o valor de `num-threads` de acordo com o número de CPUs |
+| Baixo desempenho de cache | Aumente os valores de `rrset-cache-size` e `msg-cache-size` |
+| Falsos positivos no sistema de proteção | Ajuste o valor de `MAX_RPS` em `/opt/dns-protection/dns-monitor.sh` |
+
+## Licença
+
+Este projeto está licenciado sob a licença MIT - veja o arquivo LICENSE.md para detalhes.
+
+## Créditos
+
+Desenvolvido pela TriplePlay Network - [www.tripleplay.network](https://www.tripleplay.network)
