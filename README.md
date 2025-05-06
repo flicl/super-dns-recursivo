@@ -99,6 +99,7 @@ O Super DNS Recursivo oferece uma solução completa para serviços DNS em prove
 - **Alto Desempenho**: Configuração otimizada do Unbound para ambientes corporativos e de ISP
 - **Monitoramento Detalhado**: Integração com Zabbix e Grafana para métricas em tempo real
 - **Proteção Avançada**: Sistema de detecção e mitigação de ataques e abusos DNS
+- **Proteção contra Amplificação**: Mecanismos para evitar que o servidor seja usado em ataques de reflexão DNS
 - **Fácil Implantação**: Scripts de instalação automatizados
 - **Sistema de Auto-Ajuste**: Adaptação automática a redes de qualquer tamanho
 

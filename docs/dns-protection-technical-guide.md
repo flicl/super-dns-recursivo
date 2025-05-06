@@ -300,6 +300,10 @@ mindmap
       [bantime]
       [maxretry]
       [Ações]
+    (Proteção Anti-Amplificação)
+      [Bloqueio de Consultas]
+      [Rate-Limiting]
+      [Controle de Respostas]
 ```
 
 ### 3.1. Análise Automática de Tráfego
@@ -435,6 +439,103 @@ A solução inclui detecção de:
    # Percentual do limite para emitir alertas
    ALERT_THRESHOLD=80
    ```
+
+### 3.6. Proteção Contra Ataques de Amplificação DNS
+
+```mermaid
+flowchart TD
+    A[Cliente Legítimo] -->|Consulta DNS| B[Servidor DNS]
+    C[Atacante] -->|Consulta Forjada<br>Spoofed Source IP| B
+    B -->|Resposta DNS<br>Amplificada| D[Vítima]
+    
+    E[Proteção Anti-Amplificação] -->|Mitigação| B
+    
+    subgraph "Medidas de Proteção"
+        E1[Limitar Tamanho<br>de Respostas]
+        E2[Rate Limiting]
+        E3[Bloquear Consultas<br>a IPs Privados]
+        E4[Minimizar<br>Respostas]
+        E5[Controlar<br>Pacotes Suspeitos]
+    end
+    
+    E1 --> E
+    E2 --> E
+    E3 --> E
+    E4 --> E
+    E5 --> E
+    
+    style C fill:#f99,stroke:#333,stroke-width:1px
+    style D fill:#f99,stroke:#333,stroke-width:1px
+    style E fill:#9f9,stroke:#333,stroke-width:2px
+```
+
+O servidor DNS Unbound inclui configurações específicas para prevenir seu uso em ataques de amplificação DNS:
+
+1. **Limite de Tamanho das Respostas**
+   ```bash
+   # Limitar o tamanho máximo de respostas UDP
+   max-udp-size: 3072
+   ```
+   Este parâmetro evita que grandes respostas sejam enviadas via UDP, reduzindo significativamente o potencial de ampliação.
+
+2. **Rate Limiting por IP**
+   ```bash
+   # Limite de consultas por IP e global
+   ip-ratelimit: 1000
+   ip-ratelimit-size: 4m
+   ip-ratelimit-slabs: 4
+   ratelimit: 1000
+   ```
+   O rate limiting impede que endereços IP individuais façam um grande número de consultas em curto período, mitigando o uso do servidor como amplificador.
+
+3. **Bloqueio de Consultas a Redes Privadas**
+   ```bash
+   # Bloquear queries recursivas para endereços privados
+   private-address: 10.0.0.0/8
+   private-address: 172.16.0.0/12
+   private-address: 192.168.0.0/16
+   private-address: 169.254.0.0/16
+   private-address: fd00::/8
+   private-address: fe80::/10
+   ```
+   Evita que o servidor seja usado para "escanear" redes internas ou responder a consultas sobre IPs privados.
+
+4. **Respostas Mínimas**
+   ```bash
+   # Enviar apenas as informações solicitadas na resposta
+   minimal-responses: yes
+   ```
+   Reduz o tamanho das respostas ao incluir apenas as informações explicitamente solicitadas pelo cliente.
+
+5. **Detecção de Respostas Não Solicitadas**
+   ```bash
+   # Detectar e limitar respostas não solicitadas
+   unwanted-reply-threshold: 10000
+   ```
+   Este parâmetro ajuda a detectar e mitigar ataques que envolvem envio de respostas não solicitadas.
+
+6. **Zonas Locais para Consultas Frequentemente Abusadas**
+   ```bash
+   # Bloquear consultas específicas frequentemente usadas em ataques
+   local-zone: "1.0.0.127.in-addr.arpa." nodefault
+   local-zone: "localhost." nodefault
+   local-zone: "onion." refuse
+   ```
+   Estas configurações bloqueiam ou limitam consultas a zonas específicas frequentemente utilizadas em ataques.
+
+### 3.7. Verificação da Proteção Contra Amplificação
+
+Para verificar se a proteção contra amplificação está funcionando corretamente:
+
+```bash
+# Verificar configurações de proteção contra amplificação
+unbound-control list_conf | grep -E '(ratelimit|private-address|minimal-responses|max-udp-size)'
+
+# Testar potencial de amplificação (simulação segura)
+dig @localhost +dnssec +bufsize=4096 ANY isc.org | wc -c
+```
+
+Para um servidor corretamente configurado, este último comando deverá retornar uma resposta menor ou limitada ao tamanho configurado em `max-udp-size`.
 
 ## 4. Monitoramento e Verificação
 
