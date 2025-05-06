@@ -49,6 +49,42 @@ zabbix_export:
               name: 'Uso de CPU Elevado'
               priority: HIGH
               manual_close: 'YES'
+        # Novos itens para proteção DNS
+        -
+          uuid: a89b5c6f12e645f29ad43b8a9e1c78ab
+          name: 'DNS Protection Status'
+          type: TRAP
+          key: dns.protection.active
+          delay: '0'
+          history: 30d
+          trends: 30d
+          value_type: FLOAT
+          description: 'Status do sistema de proteção contra abusos DNS (1=ativo, 0=inativo)'
+          tags:
+            -
+              tag: Application
+              value: 'DNS Protection'
+          triggers:
+            -
+              uuid: d67a3b1f98b74c2ba8e9d1c7fcd45a6e
+              expression: 'last(/Unbound - DNS/dns.protection.active)=0'
+              name: 'Sistema de proteção DNS inativo'
+              priority: HIGH
+              description: 'O sistema de proteção contra abusos DNS está desativado'
+              manual_close: 'YES'
+        -
+          uuid: b7c8d91ae4f541b2a6fd2e3a45bc87c9
+          name: 'Banned IPs Count'
+          type: TRAP
+          key: dns.banned.count
+          delay: '0'
+          history: 30d
+          trends: 30d
+          description: 'Número de IPs banidos por abuso DNS'
+          tags:
+            -
+              tag: Application
+              value: 'DNS Protection'
         -
           uuid: 2873fae9b09c4cfa8a1da6468aaef8df
           name: 'Memória Livre'
@@ -407,6 +443,13 @@ zabbix_export:
       expression: 'avg(/Unbound - DNS/mem.usage,10m)>(last(/Unbound - DNS/mem.total)*0.8)'
       name: 'Uso de Memória acima de 80%'
       priority: HIGH
+    # Novo trigger para notificar quando muitos IPs são banidos
+    -
+      uuid: b3c2ef56a70c4e27b5f8d38a19c7de45
+      expression: 'last(/Unbound - DNS/dns.banned.count)>50'
+      name: 'Alto número de IPs banidos por abuso'
+      priority: WARNING
+      description: 'Mais de 50 IPs foram banidos pelo sistema de proteção contra abusos DNS'
   graphs:
     -
       uuid: 537db211ad1e41c69a1ee649d153ee79
@@ -478,6 +521,18 @@ zabbix_export:
           item:
             host: 'Unbound - DNS'
             key: mem.free
+    # Novo gráfico para monitoramento de proteção DNS
+    -
+      uuid: e32f56a70c4e27bc2ef8d38a19c7de45
+      name: 'DNS Protection'
+      graph_items:
+        -
+          sortorder: '1'
+          drawtype: BOLD_LINE
+          color: FF0000
+          item:
+            host: 'Unbound - DNS'
+            key: dns.banned.count
     -
       uuid: faefcb9d09e348b6a66f81c19c4677df
       name: 'Respostas - RCODE'
