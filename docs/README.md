@@ -61,8 +61,8 @@ sudo crontab -e
 ```
 
 3. Importe os templates de monitoramento:
-   - **Zabbix**: Importe o arquivo `../templates/ZABBIX-TEMPLATE.yaml`
-   - **Grafana**: Importe o arquivo `../templates/GRAFANA-TEMPLATE.json`
+   - **Zabbix**: Importe o arquivo `../templates/zabbix/dns-server-template.yaml`
+   - **Grafana**: Importe o arquivo `../templates/grafana/dns-monitoring-dashboard.json`
 
 ## Solução de Problemas
 
