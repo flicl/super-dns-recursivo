@@ -12,6 +12,8 @@ LOG_FILE="/var/log/dns-abuse.log"
 TEMP_DIR="/opt/dns-protection/temp"
 CONFIG_DIR="/opt/dns-protection/config"
 WHITELIST_FILE="$CONFIG_DIR/whitelist.txt"
+RATE_LIMITED_FILE="$CONFIG_DIR/rate_limited.txt"
+BANNED_IPS_FILE="$CONFIG_DIR/banned_ips.txt"
 CONFIG_FILE="$CONFIG_DIR/dns-monitor.conf"
 
 # Valores padrão para ISP com 3.000 clientes PPPoE
@@ -21,6 +23,9 @@ DEFAULT_ALERT_THRESHOLD=90  # Mais tolerante para redes grandes
 DEFAULT_QUERY_ENTROPY_THRESHOLD=4.0  # Ajuste fino para aceitar mais subdomínios legítimos
 DEFAULT_MAX_NX_DOMAIN_PERCENT=40  # Percentual máximo de consultas NXDomain para detectar ataques
 DEFAULT_MAX_CLIENTS_PER_IP=50  # Considera NATs corporativos e redes Wi-Fi públicas
+DEFAULT_RATE_LIMIT_RPS=1000  # Valor padrão para rate limit de clientes
+DEFAULT_RATE_LIMIT_DURATION=300  # Duração padrão do rate limit (5 minutos)
+DEFAULT_VIOLATION_COUNT_FOR_BAN=3  # Número de violações antes de aplicar ban completo
 
 # Carregar configurações salvas ou usar os valores padrão
 if [ -f "$CONFIG_FILE" ]; then
@@ -33,6 +38,9 @@ else
     QUERY_ENTROPY_THRESHOLD=$DEFAULT_QUERY_ENTROPY_THRESHOLD
     MAX_NX_DOMAIN_PERCENT=$DEFAULT_MAX_NX_DOMAIN_PERCENT
     MAX_CLIENTS_PER_IP=$DEFAULT_MAX_CLIENTS_PER_IP
+    RATE_LIMIT_RPS=$DEFAULT_RATE_LIMIT_RPS
+    RATE_LIMIT_DURATION=$DEFAULT_RATE_LIMIT_DURATION
+    VIOLATION_COUNT_FOR_BAN=$DEFAULT_VIOLATION_COUNT_FOR_BAN
     
     # Salvar configuração inicial
     mkdir -p "$CONFIG_DIR"
@@ -44,6 +52,9 @@ ALERT_THRESHOLD=$ALERT_THRESHOLD
 QUERY_ENTROPY_THRESHOLD=$QUERY_ENTROPY_THRESHOLD
 MAX_NX_DOMAIN_PERCENT=$MAX_NX_DOMAIN_PERCENT
 MAX_CLIENTS_PER_IP=$MAX_CLIENTS_PER_IP
+RATE_LIMIT_RPS=$RATE_LIMIT_RPS
+RATE_LIMIT_DURATION=$RATE_LIMIT_DURATION
+VIOLATION_COUNT_FOR_BAN=$VIOLATION_COUNT_FOR_BAN
 EOF
 fi
 
@@ -64,6 +75,15 @@ if [ ! -f "$WHITELIST_FILE" ]; then
     echo "# 10.0.0.1        # Servidor de monitoramento" >> $WHITELIST_FILE
 fi
 
+# Criar arquivo de rate limiting se não existir
+if [ ! -f "$RATE_LIMITED_FILE" ]; then
+    echo "# Lista de IPs para rate limiting (um por linha)" > $RATE_LIMITED_FILE
+    echo "# Estes IPs não serão bloqueados, apenas limitados em caso de abuso" >> $RATE_LIMITED_FILE
+    echo "# Exemplos:" >> $RATE_LIMITED_FILE
+    echo "# 200.100.50.0/24  # Rede de cliente X" >> $RATE_LIMITED_FILE
+    echo "# 187.45.23.1      # Cliente importante" >> $RATE_LIMITED_FILE
+fi
+
 # Função para exibir mensagens de ajuda
 show_help() {
     echo "Uso: $0 [OPÇÕES]"
@@ -74,6 +94,9 @@ show_help() {
     echo "  --debug      Mostra informações adicionais para debug"
     echo "  --config     Configura limites de monitoramento interativamente"
     echo "  --analyze    Analisa o tráfego DNS para sugerir configurações ideais"
+    echo "  --banned     Lista os IPs atualmente banidos pelo Fail2ban"
+    echo "  --add-rate-limit IP  Adiciona um IP à lista de rate limiting"
+    echo "  --remove-rate-limit IP  Remove um IP da lista de rate limiting"
     echo "  --help       Exibe esta mensagem de ajuda"
     echo
     echo "Sem opções, o script executa em modo de monitoramento contínuo."
@@ -86,6 +109,9 @@ DEBUG_MODE=false
 RUN_ONCE=false
 CONFIG_MODE=false
 ANALYZE_MODE=false
+SHOW_BANNED=false
+ADD_RATE_LIMIT=""
+REMOVE_RATE_LIMIT=""
 
 # Processar argumentos da linha de comando
 for arg in "$@"; do
@@ -105,10 +131,34 @@ for arg in "$@"; do
         --analyze)
             ANALYZE_MODE=true
             ;;
+        --banned)
+            SHOW_BANNED=true
+            ;;
         --help)
             show_help
             ;;
     esac
+done
+
+# Verificar se há parâmetros para adicionar/remover IPs do rate limiting
+for ((i=1; i<=$#; i++)); do
+    if [[ "${!i}" == "--add-rate-limit" ]]; then
+        j=$((i+1))
+        if [[ $j -le $# ]]; then
+            ADD_RATE_LIMIT="${!j}"
+        else
+            echo "Erro: --add-rate-limit requer um endereço IP como argumento"
+            exit 1
+        fi
+    elif [[ "${!i}" == "--remove-rate-limit" ]]; then
+        j=$((i+1))
+        if [[ $j -le $# ]]; then
+            REMOVE_RATE_LIMIT="${!j}"
+        else
+            echo "Erro: --remove-rate-limit requer um endereço IP como argumento"
+            exit 1
+        fi
+    fi
 done
 
 # Função para registrar no log
@@ -177,6 +227,40 @@ is_whitelisted() {
     return 1
 }
 
+# Função para verificar se um IP está na lista de rate limiting
+is_rate_limited() {
+    local ip_to_check=$1
+    
+    # Se o arquivo de rate limiting não existir, retorna falso
+    if [ ! -f "$RATE_LIMITED_FILE" ]; then
+        return 1
+    fi
+    
+    # Lê o arquivo de rate limiting linha por linha, ignorando comentários
+    while read -r line || [ -n "$line" ]; do
+        # Ignorar linhas em branco ou comentários
+        [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+        
+        # Remove comentários inline e espaços
+        local ip_net=$(echo "$line" | sed 's/#.*$//' | tr -d '[:space:]')
+        
+        # Verifica se o IP está na rede
+        if [[ "$ip_net" == *"/"* ]]; then
+            # É uma rede CIDR
+            if ipcalc -c "$ip_to_check" "$ip_net" >/dev/null 2>&1; then
+                if ipcalc -n "$ip_to_check" "$ip_net" | grep -q "NETWORK=Y"; then
+                    return 0
+                fi
+            fi
+        elif [ "$ip_to_check" = "$ip_net" ]; then
+            # É um IP específico
+            return 0
+        fi
+    done < "$RATE_LIMITED_FILE"
+    
+    return 1
+}
+
 # Função para calcular a entropia de uma string (para detecção de tunneling DNS)
 calculate_entropy() {
     local query=$1
@@ -230,10 +314,35 @@ configure() {
     fi
     
     echo
+    echo "Configurações de Rate Limiting:"
+    echo "-----------------------------"
+    read -p "Requisições por segundo para rate limiting (atual: $RATE_LIMIT_RPS): " new_rate_limit_rps
+    if [ ! -z "$new_rate_limit_rps" ]; then
+        RATE_LIMIT_RPS=$new_rate_limit_rps
+    fi
+    
+    read -p "Duração do rate limiting em segundos (atual: $RATE_LIMIT_DURATION): " new_rate_limit_duration
+    if [ ! -z "$new_rate_limit_duration" ]; then
+        RATE_LIMIT_DURATION=$new_rate_limit_duration
+    fi
+    
+    read -p "Número de violações antes de ban completo (atual: $VIOLATION_COUNT_FOR_BAN): " new_violation_count
+    if [ ! -z "$new_violation_count" ]; then
+        VIOLATION_COUNT_FOR_BAN=$new_violation_count
+    fi
+    
+    echo
     echo "Editar lista de IPs confiáveis? (S/N): "
     read edit_whitelist
     if [[ "$edit_whitelist" =~ ^[Ss]$ ]]; then
         ${EDITOR:-vi} "$WHITELIST_FILE"
+    fi
+    
+    echo
+    echo "Editar lista de IPs para rate limiting? (S/N): "
+    read edit_rate_limited
+    if [[ "$edit_rate_limited" =~ ^[Ss]$ ]]; then
+        ${EDITOR:-vi} "$RATE_LIMITED_FILE"
     fi
     
     # Salvar configurações no arquivo de configuração
@@ -245,6 +354,9 @@ ALERT_THRESHOLD=$ALERT_THRESHOLD
 QUERY_ENTROPY_THRESHOLD=$QUERY_ENTROPY_THRESHOLD
 MAX_NX_DOMAIN_PERCENT=$MAX_NX_DOMAIN_PERCENT
 MAX_CLIENTS_PER_IP=$MAX_CLIENTS_PER_IP
+RATE_LIMIT_RPS=$RATE_LIMIT_RPS
+RATE_LIMIT_DURATION=$RATE_LIMIT_DURATION
+VIOLATION_COUNT_FOR_BAN=$VIOLATION_COUNT_FOR_BAN
 EOF
     
     echo
@@ -255,6 +367,9 @@ EOF
     echo "QUERY_ENTROPY_THRESHOLD=$QUERY_ENTROPY_THRESHOLD"
     echo "MAX_NX_DOMAIN_PERCENT=$MAX_NX_DOMAIN_PERCENT"
     echo "MAX_CLIENTS_PER_IP=$MAX_CLIENTS_PER_IP"
+    echo "RATE_LIMIT_RPS=$RATE_LIMIT_RPS"
+    echo "RATE_LIMIT_DURATION=$RATE_LIMIT_DURATION"
+    echo "VIOLATION_COUNT_FOR_BAN=$VIOLATION_COUNT_FOR_BAN"
 }
 
 # Função para analisar o tráfego e sugerir configurações
@@ -405,6 +520,50 @@ monitor_dns() {
             continue
         fi
         
+        # Verificar se o IP está na lista de rate limiting
+        if is_rate_limited "$ip"; then
+            if $DEBUG_MODE; then
+                log_message "DEBUG" "IP $ip está na lista de rate limiting (RPS=$rps)"
+            fi
+            
+            # Para IPs em rate limiting, aplicamos limites diferentes
+            if [ "$rps" -gt "$RATE_LIMIT_RPS" ]; then
+                if $TEST_MODE; then
+                    log_message "TESTE" "IP $ip em rate limiting excedeu o limite com $rps req/s (aplicaria rate limiting)"
+                else
+                    # Aplicar rate limiting temporário via iptables
+                    # Verifica se já existe regra para este IP
+                    if ! iptables -L INPUT -v -n | grep "$ip" | grep -q "limit"; then
+                        log_message "RATE_LIMIT" "Aplicando rate limiting para IP=$ip RPS=$rps por $RATE_LIMIT_DURATION segundos"
+                        
+                        # Adiciona regra de rate limiting para o IP
+                        iptables -A INPUT -p udp --dport 53 -s $ip -m limit --limit 100/minute --limit-burst 200 -j ACCEPT
+                        iptables -A INPUT -p tcp --dport 53 -s $ip -m limit --limit 100/minute --limit-burst 200 -j ACCEPT
+                        
+                        # Programar remoção da regra após o tempo definido
+                        (sleep $RATE_LIMIT_DURATION && 
+                         iptables -D INPUT -p udp --dport 53 -s $ip -m limit --limit 100/minute --limit-burst 200 -j ACCEPT && 
+                         iptables -D INPUT -p tcp --dport 53 -s $ip -m limit --limit 100/minute --limit-burst 200 -j ACCEPT && 
+                         log_message "INFO" "Rate limiting removido para IP=$ip") &
+                    fi
+                    
+                    # Registrar a violação para controle gradual
+                    echo "$(date +%s) $ip" >> "$TEMP_DIR/rate_limit_violations.txt"
+                    
+                    # Verificar se este IP já excedeu o número de violações para ban
+                    local violation_count=$(grep "$ip" "$TEMP_DIR/rate_limit_violations.txt" | wc -l)
+                    
+                    if [ "$violation_count" -ge "$VIOLATION_COUNT_FOR_BAN" ]; then
+                        # Mesmo com rate limiting, este IP continua abusando, então aplicamos ban temporário
+                        log_message "ALERTA" "IP em rate limiting continua abusando após $violation_count tentativas - IP=$ip RPS=$rps - Aplicando ban temporário"
+                    fi
+                fi
+            fi
+            
+            # Continuar para o próximo IP, já que este está em rate limiting
+            continue
+        fi
+        
         # Alerta precoce ao atingir percentual do limite
         local alert_rps=$((MAX_RPS * ALERT_THRESHOLD / 100))
         
@@ -454,6 +613,87 @@ monitor_dns() {
     fi
 }
 
+# Função para mostrar IPs banidos pelo Fail2ban
+show_banned_ips() {
+    echo "IPs Banidos pelo Sistema de Proteção DNS"
+    echo "--------------------------------------"
+    echo
+    
+    # Obter lista de jails ativos
+    local jails=$(fail2ban-client status | grep "Jail list" | sed 's/`- //g' | sed 's/Jail list://g' | tr ',' ' ')
+    
+    local total_bans=0
+    local dns_jails="dns-abuse"  # Adicione outros jails relacionados ao DNS se existirem
+    
+    echo "| IP                | Jail       | Tempo Restante   | Banido Desde        |"
+    echo "|-------------------|------------|------------------|---------------------|"
+    
+    # Para cada jail relacionado ao DNS
+    for jail in $dns_jails; do
+        # Verificar se o jail existe
+        if ! fail2ban-client status "$jail" &>/dev/null; then
+            continue
+        fi
+        
+        # Obter lista de IPs banidos
+        local banned_ips=$(fail2ban-client status "$jail" | grep "Currently banned" -A 1000 | grep -v "Currently banned" | grep -v "Total banned" | sed 's/^   //g')
+        
+        if [ -z "$banned_ips" ]; then
+            continue
+        fi
+        
+        # Para cada IP banido
+        for ip in $banned_ips; do
+            # Obter informações detalhadas (depende da versão do Fail2ban)
+            local ban_details=""
+            if [ -f "/var/lib/fail2ban/fail2ban.sqlite3" ]; then
+                # Se estiver usando o backend SQLite
+                ban_details=$(sqlite3 /var/lib/fail2ban/fail2ban.sqlite3 "SELECT timeofban FROM bans WHERE ip = '$ip' AND jail = '$jail' ORDER BY timeofban DESC LIMIT 1" 2>/dev/null)
+                
+                if [ ! -z "$ban_details" ]; then
+                    local time_of_ban=$(date -d "@$ban_details" "+%Y-%m-%d %H:%M:%S")
+                    local current_time=$(date +%s)
+                    local time_elapsed=$((current_time - ban_details))
+                    local ban_time=$(fail2ban-client get "$jail" bantime)
+                    local time_remaining=$((ban_time - time_elapsed))
+                    
+                    if [ $time_remaining -lt 0 ]; then
+                        time_remaining=0
+                    fi
+                    
+                    # Formatar tempo restante
+                    local time_remaining_fmt=$(printf "%02d:%02d:%02d" $((time_remaining/3600)) $((time_remaining%3600/60)) $((time_remaining%60)))
+                    
+                    echo "| $ip | $jail | $time_remaining_fmt | $time_of_ban |"
+                    total_bans=$((total_bans + 1))
+                else
+                    # Se não conseguir obter detalhes completos
+                    echo "| $ip | $jail | Desconhecido | Desconhecido |"
+                    total_bans=$((total_bans + 1))
+                fi
+            else
+                # Se não tiver acesso ao banco de dados
+                echo "| $ip | $jail | Desconhecido | Desconhecido |"
+                total_bans=$((total_bans + 1))
+            fi
+        done
+    done
+    
+    if [ $total_bans -eq 0 ]; then
+        echo "Nenhum IP banido no momento."
+    else
+        echo
+        echo "Total de IPs banidos: $total_bans"
+    fi
+    echo
+    echo "Para adicionar um IP à lista de rate limiting (nunca banido, apenas limitado):"
+    echo "  sudo $0 --add-rate-limit IP"
+    echo
+    echo "Para remover um IP da lista de rate limiting:"
+    echo "  sudo $0 --remove-rate-limit IP"
+    echo
+}
+
 # Função principal
 main() {
     # Verificar modos especiais
@@ -465,6 +705,31 @@ main() {
     if $ANALYZE_MODE; then
         analyze_traffic
         exit 0
+    fi
+    
+    if $SHOW_BANNED; then
+        show_banned_ips
+        exit 0
+    fi
+    
+    # Adicionar IP à lista de rate limiting
+    if [ ! -z "$ADD_RATE_LIMIT" ]; then
+        if is_rate_limited "$ADD_RATE_LIMIT"; then
+            log_message "INFO" "IP $ADD_RATE_LIMIT já está na lista de rate limiting"
+        else
+            echo "$ADD_RATE_LIMIT" >> $RATE_LIMITED_FILE
+            log_message "INFO" "IP $ADD_RATE_LIMIT adicionado à lista de rate limiting"
+        fi
+    fi
+    
+    # Remover IP da lista de rate limiting
+    if [ ! -z "$REMOVE_RATE_LIMIT" ]; then
+        if is_rate_limited "$REMOVE_RATE_LIMIT"; then
+            sed -i "/^$REMOVE_RATE_LIMIT$/d" $RATE_LIMITED_FILE
+            log_message "INFO" "IP $REMOVE_RATE_LIMIT removido da lista de rate limiting"
+        else
+            log_message "INFO" "IP $REMOVE_RATE_LIMIT não encontrado na lista de rate limiting"
+        fi
     fi
     
     log_message "INFO" "Iniciando monitoramento de abuso de DNS (Limite: $MAX_RPS req/s, Intervalo: ${MONITOR_INTERVAL}s)"

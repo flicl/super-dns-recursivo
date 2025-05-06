@@ -1,6 +1,6 @@
 # Guia Rápido de Implementação: Proteção DNS com dnstop e Fail2ban
 
-Este guia apresenta o procedimento simplificado para implementar a proteção do servidor DNS Unbound contra abusos, utilizando dnstop para monitoramento e Fail2ban para bloqueio automático.
+Este guia apresenta o procedimento simplificado para implementar a proteção do servidor DNS Unbound contra abusos, utilizando dntop para monitoramento e Fail2ban para bloqueio automático.
 
 ## Fluxo de Instalação
 
@@ -58,6 +58,40 @@ Ajuste os parâmetros principais conforme necessário:
 - **Análise e configuração automática**: Execute `sudo /opt/dns-protection/dns-monitor.sh --analyze` para avaliar o tráfego e receber recomendações de configuração
 - **Configuração interativa**: Execute `sudo /opt/dns-protection/dns-monitor.sh --config` para ajustar parâmetros interativamente
 - **Lista de IPs confiáveis**: Edite o arquivo `/opt/dns-protection/config/whitelist.txt` para adicionar IPs e redes que nunca devem ser bloqueados
+- **Lista de rate limiting**: Edite o arquivo `/opt/dns-protection/config/rate_limited.txt` para adicionar IPs de clientes que devem ter tráfego limitado em vez de bloqueado
+
+## Novos Recursos de Proteção DNS
+
+### Rate Limiting para Clientes Legítimos
+
+Em vez de bloquear completamente um cliente legítimo que está gerando tráfego anômalo, você pode aplicar rate limiting:
+
+```bash
+# Adicionar um IP à lista de rate limiting
+sudo /opt/dns-protection/dns-monitor.sh --add-rate-limit IP_DO_CLIENTE
+
+# Remover um IP da lista de rate limiting
+sudo /opt/dns-protection/dns-monitor.sh --remove-rate-limit IP_DO_CLIENTE
+```
+
+### Visualização de IPs Banidos
+
+Visualize informações detalhadas sobre os IPs atualmente banidos:
+
+```bash
+# Ver lista detalhada de IPs banidos
+sudo /opt/dns-protection/dns-monitor.sh --banned
+```
+
+Esta visualização mostra o tempo restante de bloqueio e quando o IP foi banido.
+
+### Sistema Gradual de Bloqueio
+
+O sistema agora implementa um mecanismo gradual que:
+1. Detecta tráfego anômalo
+2. Aplica rate limiting primeiro para IPs na lista especial
+3. Monitora violações repetidas
+4. Aplica bloqueios temporários apenas após múltiplas violações
 
 ## Comandos Úteis
 
@@ -87,12 +121,18 @@ graph TD
     B --> C[Configuração Fail2ban<br>/etc/fail2ban/jail.d/dns-abuse.conf]
     C --> D[Filtro Fail2ban<br>/etc/fail2ban/filter.d/dns-abuse.conf]
     A --> E[Whitelist<br>/opt/dns-protection/config/whitelist.txt]
+    A --> F[Rate Limiting<br>/opt/dns-protection/config/rate_limited.txt]
+    A --> G[Regras IPTables<br>para Rate Limiting]
+    A --> H[Visualizador de<br>IPs Banidos]
     
     style A fill:#f96,stroke:#333,stroke-width:2px
     style B fill:#bbf,stroke:#333,stroke-width:2px
     style C fill:#bbf,stroke:#333,stroke-width:2px
     style D fill:#bbf,stroke:#333,stroke-width:2px
     style E fill:#9f9,stroke:#333,stroke-width:2px
+    style F fill:#9f9,stroke:#333,stroke-width:2px
+    style G fill:#bbf,stroke:#333,stroke-width:2px
+    style H fill:#f9f,stroke:#333,stroke-width:2px
 ```
 
 - **Script de monitoramento**: `/opt/dns-protection/dns-monitor.sh`
@@ -100,6 +140,8 @@ graph TD
 - **Configuração Fail2ban**: `/etc/fail2ban/jail.d/dns-abuse.conf`
 - **Filtro Fail2ban**: `/etc/fail2ban/filter.d/dns-abuse.conf`
 - **Lista de IPs confiáveis**: `/opt/dns-protection/config/whitelist.txt`
+- **Lista de rate limiting**: `/opt/dns-protection/config/rate_limited.txt`
+- **Logs de violações**: `/opt/dns-protection/temp/rate_limit_violations.txt`
 
 ## Solução de Problemas Comuns
 
@@ -130,11 +172,24 @@ sequenceDiagram
         Unbound->>Cliente: Resposta DNS
         Monitoramento->>Monitoramento: Analisa tráfego
         
-        alt Detecção de abuso
-            Monitoramento->>Monitoramento: Verificar se IP está em whitelist
-            Monitoramento->>Monitoramento: Registrar abuso em log
-            Monitoramento->>Firewall: Configurar bloqueio via Fail2ban
-            Note over Firewall: IP bloqueado por bantime<br>(padrão: 1 hora)
+        alt Detecção de tráfego anômalo
+            Monitoramento->>Monitoramento: Verificar whitelist
+            
+            alt IP na whitelist
+                Monitoramento->>Monitoramento: Permitir sem restrições
+            else IP em rate limiting
+                Monitoramento->>Monitoramento: Verificar RPS atual
+                alt RPS > limite para rate limiting
+                    Monitoramento->>Firewall: Aplicar rate limiting temporário
+                    Note over Firewall: Tráfego limitado,<br>não bloqueado
+                end
+            else IP normal
+                alt Abuso persistente detectado
+                    Monitoramento->>Monitoramento: Registrar abuso em log
+                    Monitoramento->>Firewall: Configurar bloqueio via Fail2ban
+                    Note over Firewall: IP bloqueado por bantime<br>(padrão: 1 hora)
+                end
+            end
         end
     else IP bloqueado
         Cliente->>Firewall: Requisição DNS

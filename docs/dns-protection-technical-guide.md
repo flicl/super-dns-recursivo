@@ -338,12 +338,14 @@ Este modo permite configurar interativamente:
 - Percentual de alerta (quando alertar antes de banir)
 - Lista de IPs confiáveis
 
-### 3.3. Gerenciamento de Whitelist
+### 3.3. Gerenciamento de Whitelist e Rate Limiting
 
-A solução agora inclui um sistema de whitelist dedicado:
+A solução agora inclui dois níveis de proteção:
+
+#### 3.3.1. Whitelist: IPs Totalmente Confiáveis
 
 ```bash
-# Editar a lista de IPs confiáveis
+# Editar a lista de IPs confiáveis (nunca serão bloqueados)
 sudo nano /opt/dns-protection/config/whitelist.txt
 ```
 
@@ -353,6 +355,43 @@ O arquivo suporta:
 - Comentários (linhas começando com #)
 
 Os IPs/redes listados neste arquivo nunca serão bloqueados, independentemente do volume de tráfego.
+
+#### 3.3.2. Rate Limiting: IPs de Clientes Legítimos
+
+```bash
+# Editar a lista de IPs para rate limiting (nunca bloqueados, apenas limitados)
+sudo nano /opt/dns-protection/config/rate_limited.txt
+```
+
+O arquivo segue o mesmo formato da whitelist e oferece:
+- Proteção contra bloqueio total para clientes legítimos
+- Aplicação automática de limites de tráfego quando necessário
+- Sistema gradual que só aplica bloqueio após múltiplas violações
+
+#### 3.3.3. Gerenciamento dos IPs em Rate Limiting
+
+```bash
+# Adicionar um IP à lista de rate limiting
+sudo /opt/dns-protection/dns-monitor.sh --add-rate-limit IP_DO_CLIENTE
+
+# Remover um IP da lista de rate limiting
+sudo /opt/dns-protection/dns-monitor.sh --remove-rate-limit IP_DO_CLIENTE
+```
+
+#### 3.3.4. Visualização de IPs Banidos
+
+Para verificar quais IPs estão atualmente banidos:
+
+```bash
+# Listar IPs banidos com informações detalhadas
+sudo /opt/dns-protection/dns-monitor.sh --banned
+```
+
+Esta visualização fornece:
+- Lista completa de IPs atualmente banidos
+- Tempo restante do bloqueio
+- Data/hora em que o IP foi banido
+- Jail responsável pelo bloqueio
 
 ### 3.4. Ajuste de Limites de Requisições
 

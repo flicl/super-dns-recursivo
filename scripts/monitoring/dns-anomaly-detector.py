@@ -11,11 +11,24 @@ import sys
 import time
 import json
 import pickle
+import logging
 import numpy as np
 import pandas as pd
+from pathlib import Path
 from datetime import datetime, timedelta
 from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler
+
+# Configurar o logger
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[
+        logging.FileHandler('/var/log/dns-anomaly.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 # Configurações
 CONFIG = {
@@ -32,41 +45,78 @@ CONFIG = {
     ]
 }
 
-# Criação dos diretórios
-os.makedirs(CONFIG['data_dir'], exist_ok=True)
+# Validação e criação de diretórios
+def setup_environment():
+    """Verifica e cria diretórios necessários de maneira segura"""
+    try:
+        # Utiliza pathlib para manipulação segura de caminhos
+        data_dir = Path(CONFIG['data_dir'])
+        data_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Verifica permissões do diretório (deve ser acessível apenas pelo usuário/grupo)
+        data_dir.chmod(0o750)
+        
+        # Verifica arquivo de log
+        log_file = Path(CONFIG['log_file'])
+        if not log_file.parent.exists():
+            log_file.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Verifica diretório de métricas
+        metrics_file = Path(CONFIG['metrics_file'])
+        if not metrics_file.parent.exists():
+            metrics_file.parent.mkdir(parents=True, exist_ok=True)
+            
+        return True
+    except Exception as e:
+        logger.error(f"Erro ao configurar ambiente: {str(e)}")
+        return False
 
 # Função para log
 def log_message(level, message):
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    log_line = f"[{timestamp}] [{level}] {message}"
-    print(log_line)
-    
-    with open(CONFIG['log_file'], 'a') as log_file:
-        log_file.write(log_line + "\n")
+    """Log padronizado para o sistema"""
+    if level.upper() == "INFO":
+        logger.info(message)
+    elif level.upper() == "AVISO" or level.upper() == "WARNING":
+        logger.warning(message)
+    elif level.upper() == "ERRO" or level.upper() == "ERROR":
+        logger.error(message)
+    elif level.upper() == "ALERTA":
+        logger.critical(message)
 
-# Função para extrair métricas do arquivo do Prometheus
+# Função para extrair métricas do arquivo do Prometheus com validação de segurança
 def extract_metrics():
+    """Extrai métricas do arquivo do Prometheus com validação de entrada"""
     metrics = {}
     
-    if not os.path.exists(CONFIG['metrics_file']):
-        log_message("ERRO", f"Arquivo de métricas não encontrado: {CONFIG['metrics_file']}")
+    metrics_path = Path(CONFIG['metrics_file'])
+    if not metrics_path.exists():
+        log_message("ERRO", f"Arquivo de métricas não encontrado: {metrics_path}")
+        return None
+    
+    if not metrics_path.is_file():
+        log_message("ERRO", f"O caminho {metrics_path} não é um arquivo válido")
         return None
     
     try:
-        # Lê o arquivo de métricas do Prometheus
-        with open(CONFIG['metrics_file'], 'r') as f:
+        # Lê o arquivo de métricas do Prometheus com validação
+        with open(metrics_path, 'r') as f:
             lines = f.readlines()
         
-        # Extrai as métricas
+        # Extrai as métricas com validação
         for line in lines:
             if line.startswith('#'):
                 continue
                 
             parts = line.strip().split()
             if len(parts) >= 2:
-                metric_name = parts[0]
-                metric_value = float(parts[1])
-                metrics[metric_name] = metric_value
+                try:
+                    metric_name = parts[0]
+                    # Valida valor numérico antes de converter
+                    if parts[1].replace('.', '', 1).isdigit() or (parts[1].startswith('-') and parts[1][1:].replace('.', '', 1).isdigit()):
+                        metric_value = float(parts[1])
+                        metrics[metric_name] = metric_value
+                except (ValueError, IndexError) as e:
+                    log_message("AVISO", f"Erro ao processar linha de métricas: {line.strip()} - {str(e)}")
         
         # Adiciona características temporais
         now = datetime.now()
@@ -253,6 +303,11 @@ def detect_anomalies():
 
 # Função principal
 def main():
+    # Configurar ambiente
+    if not setup_environment():
+        log_message("ERRO", "Falha ao configurar o ambiente. Abortando.")
+        sys.exit(1)
+        
     # Verifica argumentos
     if len(sys.argv) > 1:
         if sys.argv[1] == '--train':
