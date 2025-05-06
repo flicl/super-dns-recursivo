@@ -1,0 +1,15 @@
+[Unit]
+Description=Exportador de Métricas DNS para Sistemas de Monitoramento
+After=network.target dns-monitor.service
+Wants=dns-monitor.service
+
+[Service]
+Type=simple
+ExecStart=/opt/dns-protection/scripts/monitoring/dns-metrics-exporter.sh
+Restart=always
+RestartSec=10
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target

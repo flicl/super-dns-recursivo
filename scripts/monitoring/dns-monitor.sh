@@ -12,13 +12,45 @@ LOG_FILE="/var/log/dns-abuse.log"
 TEMP_DIR="/opt/dns-protection/temp"
 CONFIG_DIR="/opt/dns-protection/config"
 WHITELIST_FILE="$CONFIG_DIR/whitelist.txt"
-MAX_RPS=300  # Requisições máximas por segundo (valor aumentado conforme recomendado)
-MONITOR_INTERVAL=30  # Intervalo de monitoramento reduzido para detectar ataques mais rapidamente
+CONFIG_FILE="$CONFIG_DIR/dns-monitor.conf"
+
+# Valores padrão para ISP com 3.000 clientes PPPoE
+DEFAULT_MAX_RPS=3000  # 1 req/s por cliente (considerando NAT típico com ~5 dispositivos por PPPoE)
+DEFAULT_MONITOR_INTERVAL=45  # Intervalo de monitoramento reduzido para detectar ataques mais rapidamente
+DEFAULT_ALERT_THRESHOLD=90  # Mais tolerante para redes grandes
+DEFAULT_QUERY_ENTROPY_THRESHOLD=4.0  # Ajuste fino para aceitar mais subdomínios legítimos
+DEFAULT_MAX_NX_DOMAIN_PERCENT=40  # Percentual máximo de consultas NXDomain para detectar ataques
+DEFAULT_MAX_CLIENTS_PER_IP=50  # Considera NATs corporativos e redes Wi-Fi públicas
+
+# Carregar configurações salvas ou usar os valores padrão
+if [ -f "$CONFIG_FILE" ]; then
+    source "$CONFIG_FILE"
+else
+    # Usar valores padrão
+    MAX_RPS=$DEFAULT_MAX_RPS
+    MONITOR_INTERVAL=$DEFAULT_MONITOR_INTERVAL
+    ALERT_THRESHOLD=$DEFAULT_ALERT_THRESHOLD
+    QUERY_ENTROPY_THRESHOLD=$DEFAULT_QUERY_ENTROPY_THRESHOLD
+    MAX_NX_DOMAIN_PERCENT=$DEFAULT_MAX_NX_DOMAIN_PERCENT
+    MAX_CLIENTS_PER_IP=$DEFAULT_MAX_CLIENTS_PER_IP
+    
+    # Salvar configuração inicial
+    mkdir -p "$CONFIG_DIR"
+    cat > "$CONFIG_FILE" << EOF
+# Configuração gerada automaticamente - $(date)
+MAX_RPS=$MAX_RPS
+MONITOR_INTERVAL=$MONITOR_INTERVAL
+ALERT_THRESHOLD=$ALERT_THRESHOLD
+QUERY_ENTROPY_THRESHOLD=$QUERY_ENTROPY_THRESHOLD
+MAX_NX_DOMAIN_PERCENT=$MAX_NX_DOMAIN_PERCENT
+MAX_CLIENTS_PER_IP=$MAX_CLIENTS_PER_IP
+EOF
+fi
+
+# BANTIME dinâmico entre 30-90 minutos para evitar padrões de ataque
+BANTIME=$(( (RANDOM%3600)+1800 ))
 NETWORK_INTERFACE=$(ip route | grep default | sed -e "s/^.*dev.//" -e "s/.proto.*//")
 DNS_PORT="port 53"  # Filtro para tráfego DNS
-ALERT_THRESHOLD=80  # Percentual do MAX_RPS para emitir alertas sem bloquear (detecção precoce)
-QUERY_ENTROPY_THRESHOLD=4.0  # Limite de entropia para detecção de tunneling DNS
-MAX_NX_DOMAIN_PERCENT=30  # Percentual máximo de consultas NXDomain para detectar ataques
 
 # Criar diretórios necessários
 mkdir -p $TEMP_DIR
@@ -182,6 +214,21 @@ configure() {
         ALERT_THRESHOLD=$new_threshold
     fi
     
+    read -p "Limite de entropia para detecção de tunneling (atual: $QUERY_ENTROPY_THRESHOLD): " new_entropy
+    if [ ! -z "$new_entropy" ]; then
+        QUERY_ENTROPY_THRESHOLD=$new_entropy
+    fi
+    
+    read -p "Percentual máximo de consultas NXDomain (atual: $MAX_NX_DOMAIN_PERCENT%): " new_nx_percent
+    if [ ! -z "$new_nx_percent" ]; then
+        MAX_NX_DOMAIN_PERCENT=$new_nx_percent
+    fi
+    
+    read -p "Clientes máximos por IP (NATs compartilhados) (atual: $MAX_CLIENTS_PER_IP): " new_max_clients
+    if [ ! -z "$new_max_clients" ]; then
+        MAX_CLIENTS_PER_IP=$new_max_clients
+    fi
+    
     echo
     echo "Editar lista de IPs confiáveis? (S/N): "
     read edit_whitelist
@@ -189,11 +236,25 @@ configure() {
         ${EDITOR:-vi} "$WHITELIST_FILE"
     fi
     
+    # Salvar configurações no arquivo de configuração
+    cat > "$CONFIG_FILE" << EOF
+# Configuração atualizada manualmente - $(date)
+MAX_RPS=$MAX_RPS
+MONITOR_INTERVAL=$MONITOR_INTERVAL
+ALERT_THRESHOLD=$ALERT_THRESHOLD
+QUERY_ENTROPY_THRESHOLD=$QUERY_ENTROPY_THRESHOLD
+MAX_NX_DOMAIN_PERCENT=$MAX_NX_DOMAIN_PERCENT
+MAX_CLIENTS_PER_IP=$MAX_CLIENTS_PER_IP
+EOF
+    
     echo
-    echo "Configurações atualizadas!"
+    echo "Configurações atualizadas e salvas em $CONFIG_FILE!"
     echo "MAX_RPS=$MAX_RPS"
     echo "MONITOR_INTERVAL=$MONITOR_INTERVAL"
     echo "ALERT_THRESHOLD=$ALERT_THRESHOLD"
+    echo "QUERY_ENTROPY_THRESHOLD=$QUERY_ENTROPY_THRESHOLD"
+    echo "MAX_NX_DOMAIN_PERCENT=$MAX_NX_DOMAIN_PERCENT"
+    echo "MAX_CLIENTS_PER_IP=$MAX_CLIENTS_PER_IP"
 }
 
 # Função para analisar o tráfego e sugerir configurações
@@ -230,8 +291,18 @@ analyze_traffic() {
         avg_rps=$((total_queries / analyze_time / total_ips))
     fi
     
-    # Sugerir configurações
+    # Sugerir configurações - ajustado para ambiente de ISP com 3.000 clientes
+    # Garantir valores mínimos adequados para ISPs, mesmo se o tráfego analisado for baixo
+    if [ "$max_rps" -lt 500 ]; then
+        log_message "INFO" "RPS máximo detectado é baixo, usando valores mínimos recomendados para ISP"
+        max_rps=500
+    fi
+    
     local suggested_max_rps=$((max_rps * 3))
+    # Garantir que sugestão não seja menor que valor padrão para ISP
+    if [ "$suggested_max_rps" -lt $DEFAULT_MAX_RPS ]; then
+        suggested_max_rps=$DEFAULT_MAX_RPS
+    fi
     
     log_message "INFO" "Análise concluída"
     echo
@@ -242,19 +313,31 @@ analyze_traffic() {
     echo "Total de consultas: $total_queries"
     echo "Total de IPs únicos: $total_ips"
     echo
-    echo "Configurações sugeridas:"
-    echo "MAX_RPS=$suggested_max_rps (3x o máximo detectado)"
-    echo "MONITOR_INTERVAL=30 (intervalo recomendado para ambientes em produção)"
-    echo "ALERT_THRESHOLD=80 (alertar em 80% do limite)"
+    echo "Configurações sugeridas para ambiente de ISP com 3.000 clientes:"
+    echo "MAX_RPS=$suggested_max_rps (3x o máximo detectado, mínimo $DEFAULT_MAX_RPS)"
+    echo "MONITOR_INTERVAL=45 (intervalo recomendado para ISPs)"
+    echo "ALERT_THRESHOLD=90 (alertar em 90% do limite)"
     echo
     echo "Deseja aplicar essas configurações? (S/N): "
     read apply_config
     
     if [[ "$apply_config" =~ ^[Ss]$ ]]; then
         MAX_RPS=$suggested_max_rps
-        MONITOR_INTERVAL=30
-        ALERT_THRESHOLD=80
-        log_message "INFO" "Novas configurações aplicadas"
+        MONITOR_INTERVAL=45
+        ALERT_THRESHOLD=90
+        
+        # Salvar configurações no arquivo de configuração
+        cat > "$CONFIG_FILE" << EOF
+# Configuração atualizada automaticamente após análise - $(date)
+MAX_RPS=$MAX_RPS
+MONITOR_INTERVAL=$MONITOR_INTERVAL
+ALERT_THRESHOLD=$ALERT_THRESHOLD
+QUERY_ENTROPY_THRESHOLD=$QUERY_ENTROPY_THRESHOLD
+MAX_NX_DOMAIN_PERCENT=$MAX_NX_DOMAIN_PERCENT
+MAX_CLIENTS_PER_IP=$MAX_CLIENTS_PER_IP
+EOF
+        
+        log_message "INFO" "Novas configurações aplicadas e salvas em $CONFIG_FILE"
     fi
 }
 
