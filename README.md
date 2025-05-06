@@ -16,6 +16,8 @@ graph TD
             D_README[README.md]
             D_QUICK[dns-protection-quickstart.md]
             D_TECH[dns-protection-technical-guide.md]
+            D_AUTO[dns-auto-adjusting-system.md]
+            D_STRUCT[project-structure.md]
         end
         
         subgraph "conf/"
@@ -29,12 +31,21 @@ graph TD
         subgraph "install/"
             DNS_SETUP[dns-protection-setup.sh]
             UNB_SETUP[unbound-setup.sh]
+            CRON_SETUP[dns-monitor-cron-setup.sh]
+            subgraph "systemd/"
+                SYS_MONITOR[dns-monitor.service]
+                SYS_EXPORTER[dns-metrics-exporter.service]
+            end
         end
         
         subgraph "scripts/monitoring/"
             DNS_MON[dns-monitor.sh]
             SRV_MON[serverMonitoring.sh]
             UNB_MON[unboundMonitoring.sh]
+            ADV_MON[advanced-monitoring-setup.sh]
+            ANO_DET[dns-anomaly-detector.py]
+            METRICS_EXP[dns-metrics-exporter.sh]
+            SEC_INT[dns-security-integration.sh]
         end
         
         subgraph "templates/"
@@ -51,20 +62,34 @@ graph TD
     README -->|Instalação| install/
     D_README -->|Guia Rápido| D_QUICK
     D_README -->|Guia Técnico| D_TECH
+    D_README -->|Auto Ajuste| D_AUTO
+    D_README -->|Estrutura| D_STRUCT
+    
     DNS_SETUP -->|Configura| F2B_JAIL
     DNS_SETUP -->|Configura| F2B_CONF
     DNS_SETUP -->|Instala| DNS_MON
     UNB_SETUP -->|Configura| UNBOUND
+    
     DNS_MON -->|Monitoramento| SRV_MON
     DNS_MON -->|Monitoramento| UNB_MON
+    DNS_MON -->|Integração| SEC_INT
+    DNS_MON -->|Alimenta| ANO_DET
+    
+    ADV_MON -->|Configura| METRICS_EXP
+    METRICS_EXP -->|Exportação| SYS_EXPORTER
+    
     SRV_MON -->|Dados para| ZBX_TEMPL
     UNB_MON -->|Dados para| ZBX_TEMPL
     ZBX_TEMPL -->|Visualização| GRA_DASH
+    
+    CRON_SETUP -->|Agenda| DNS_MON
     
     style README fill:#f96,stroke:#333,stroke-width:2px
     style DNS_MON fill:#bbf,stroke:#333,stroke-width:2px
     style UNBOUND fill:#bbf,stroke:#333,stroke-width:2px
     style F2B_JAIL fill:#bbf,stroke:#333,stroke-width:2px
+    style METRICS_EXP fill:#bbf,stroke:#333,stroke-width:2px
+    style ANO_DET fill:#bbf,stroke:#333,stroke-width:2px
 ```
 
 ## Visão Geral
@@ -75,6 +100,7 @@ O Super DNS Recursivo oferece uma solução completa para serviços DNS em prove
 - **Monitoramento Detalhado**: Integração com Zabbix e Grafana para métricas em tempo real
 - **Proteção Avançada**: Sistema de detecção e mitigação de ataques e abusos DNS
 - **Fácil Implantação**: Scripts de instalação automatizados
+- **Sistema de Auto-Ajuste**: Adaptação automática a redes de qualquer tamanho
 
 ## Plataformas Suportadas
 
@@ -85,11 +111,13 @@ O Super DNS Recursivo oferece uma solução completa para serviços DNS em prove
 
 ## Componentes do Sistema
 
-O sistema é composto por três componentes principais:
+O sistema é composto por cinco componentes principais:
 
 1. **Servidor DNS Unbound**: Resolvedor DNS recursivo altamente otimizado
 2. **Sistema de Monitoramento**: Coleta de métricas com Zabbix e visualização com Grafana
 3. **Sistema de Proteção**: Detecção e bloqueio automático de abusos com análise avançada e Fail2ban
+4. **Sistema de Auto-Ajuste**: Adaptação automática à escala e características do ambiente
+5. **Exportador de Métricas**: Compatível com diferentes sistemas de monitoramento (Prometheus, Zabbix, Grafana)
 
 ## Guia de Instalação
 
@@ -134,9 +162,13 @@ server:
   statistics-cumulative: no
   port: 53
   
-  # Lista de Interfaces
+  # Lista de Interfaces - configuração para DNS primário e secundário
   interface: 0.0.0.0
   interface: ::0
+  interface: 10.10.10.10  # DNS Primário IPv4
+  interface: 10.10.9.9    # DNS Secundário IPv4
+  interface: fd10:1010::1010  # DNS Primário IPv6
+  interface: fd10:1010::9999  # DNS Secundário IPv6
   interface: 127.0.0.1
   interface: ::1
 
@@ -334,6 +366,99 @@ sudo crontab -e
 5. Selecione o datasource do Zabbix que contém os dados do servidor DNS
 6. Clique em **Import**
 
+### 4. Sistema de Auto-Ajuste
+
+O Super DNS Recursivo inclui um sistema de auto-ajuste que adapta automaticamente suas configurações com base no tráfego real do ambiente, sem necessidade de dimensionamento manual.
+
+```bash
+# Instalar componentes adicionais necessários para o auto-ajuste
+sudo apt install bc ipcalc conntrack -y
+
+# Analisar o tráfego atual e ajustar configurações automaticamente
+sudo scripts/monitoring/dns-monitor.sh --analyze
+```
+
+O sistema de auto-ajuste funciona da seguinte forma:
+
+1. **Análise de Tráfego**: Monitoramento do tráfego DNS por 5 minutos para coletar métricas reais
+2. **Cálculo de Parâmetros**: Determinação automática de limites ideais para o seu ambiente
+3. **Aplicação de Configurações**: Ajuste das configurações para balancear desempenho e proteção
+4. **Persistência**: Configurações salvas em `/opt/dns-protection/config/dns-monitor.conf`
+
+#### Parâmetros Ajustáveis
+
+| Parâmetro | Descrição | Ajuste Automático |
+|-----------|-----------|-------------------|
+| MAX_RPS | Requisições máximas por segundo | Baseado no tráfego máximo detectado |
+| MONITOR_INTERVAL | Intervalo de monitoramento | Otimizado para o tamanho da rede |
+| ALERT_THRESHOLD | Limite percentual para alertas | Baseado na distribuição do tráfego |
+| QUERY_ENTROPY_THRESHOLD | Limite para detecção de tunneling | Ajustado conforme tipos de consultas |
+| MAX_NX_DOMAIN_PERCENT | Percentual máximo de NXDomain | Calculado a partir do tráfego real |
+
+Para mais detalhes sobre o sistema de auto-ajuste, consulte `docs/dns-auto-adjusting-system.md`.
+
+### 5. Exportador de Métricas DNS
+
+O sistema inclui um exportador de métricas flexível que permite a integração com diferentes sistemas de monitoramento.
+
+```bash
+# Instalar o exportador de métricas como serviço
+sudo cp ./install/systemd/dns-metrics-exporter.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable dns-metrics-exporter
+sudo systemctl start dns-metrics-exporter
+```
+
+#### Formatos de Exportação Suportados
+
+O exportador de métricas suporta três formatos diferentes:
+
+1. **Prometheus**: Gera arquivos de métricas no formato compatível com Prometheus
+   ```bash
+   sudo scripts/monitoring/dns-metrics-exporter.sh --prometheus
+   ```
+
+2. **Zabbix**: Envia métricas diretamente para um servidor Zabbix 
+   ```bash
+   sudo scripts/monitoring/dns-metrics-exporter.sh --zabbix
+   ```
+
+3. **Grafana**: Gera arquivos JSON para importação direta no Grafana
+   ```bash
+   sudo scripts/monitoring/dns-metrics-exporter.sh --grafana
+   ```
+
+#### Métricas Coletadas
+
+- Consultas DNS totais
+- IPs únicos realizando consultas
+- Taxa máxima de requisições por segundo
+- Taxa média de requisições por segundo
+- Percentual de consultas NXDomain
+- Número de IPs bloqueados
+
+### 6. Detector de Anomalias DNS
+
+O sistema inclui um detector de anomalias baseado em Python que utiliza técnicas avançadas para identificar padrões anormais no tráfego DNS.
+
+```bash
+# Instalar dependências do detector de anomalias
+sudo apt install python3-pip -y
+sudo pip3 install numpy pandas scikit-learn
+
+# Executar o detector de anomalias manualmente
+sudo python3 scripts/monitoring/dns-anomaly-detector.py
+```
+
+O detector de anomalias utiliza algoritmos de aprendizado de máquina para:
+
+1. **Detecção de Padrões**: Identificar consultas DNS anormais que não seguem padrões usuais
+2. **Análise de Frequência**: Detectar mudanças repentinas na frequência ou volume de consultas
+3. **Análise de Entropia**: Identificar consultas potencialmente maliciosas com base em entropia
+4. **Correlação**: Relacionar atividades suspeitas entre diferentes hosts
+
+O detector de anomalias trabalha em conjunto com o sistema de proteção para proporcionar uma camada adicional de segurança contra ameaças avançadas.
+
 ## Verificação e Solução de Problemas
 
 ### Verificar Status dos Serviços
@@ -376,6 +501,8 @@ Para informações mais detalhadas sobre o sistema de proteção DNS, consulte:
 
 - **Guia Rápido**: `docs/dns-protection-quickstart.md`
 - **Guia Técnico**: `docs/dns-protection-technical-guide.md`
+- **Sistema de Auto-Ajuste**: `docs/dns-auto-adjusting-system.md`
+- **Estrutura do Projeto**: `docs/project-structure.md`
 
 ## Licença
 
